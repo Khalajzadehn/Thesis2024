@@ -1,0 +1,761 @@
+---
+title: "Initial Data Research"
+author: "Niloofar Khalajzadeh"
+date: "2023-10-29"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+FILES_DIRECTORY <- "./files_converted/"
+```
+
+
+```{r}
+get_soundtrack <- function() {
+  recordings <- list()
+  for (file in list.files(FILES_DIRECTORY)) {
+    if (endsWith(file, ".merged.txt")) {
+      recordings <- append(recordings, file)
+    }
+  }
+  recordings
+}
+```
+
+```{r warning = FALSE, message = FALSE}
+recordings <- get_soundtrack()
+
+df <- data.frame()
+
+for (r in recordings) {
+  f_path <- paste(FILES_DIRECTORY, r, sep="")
+  r_df <- read_table(f_path)
+  df <- rbind(df, r_df)
+}
+df[df == "--undefined--"] <- NA
+df[df == "MISSING"] <- NA
+
+```
+
+```{r}
+SELECTED_PARTICIPANT_ID = "KIKIPP2"
+TIME_INTERVAL = 5
+```
+
+## Prepare "dfauto_df" data frame
+```{r}
+dfauto_df <- df[startsWith(df$tier, "DFauto"),]
+dfauto_df <- dfauto_df[!is.na(dfauto_df$text), ]
+
+dfauto_df$tmin <- as.numeric(dfauto_df$tmin)
+dfauto_df$tmax <- as.numeric(dfauto_df$tmax)
+
+dfauto_df$duration <- dfauto_df$tmax - dfauto_df$tmin
+dfauto_df$ParticipantID <- gsub("(.*)_L[12]_Task[12]\\.wav", "\\1", dfauto_df$SoundfileID)
+dfauto_df$Language <- gsub(".*_(L[12])_Task[12]\\.wav", "\\1", dfauto_df$SoundfileID)
+dfauto_df$Task <- gsub(".*_L[12]_(Task[12])\\.wav", "\\1", dfauto_df$SoundfileID)
+
+print(dfauto_df)
+```
+## Prepare "phrases_df" data frame
+```{r}
+phrases_df <- df[startsWith(df$tier, "Phrases"),]
+phrases_df <- phrases_df[!is.na(phrases_df$text), ]
+
+phrases_df$tmin <- as.numeric(phrases_df$tmin)
+phrases_df$tmax <- as.numeric(phrases_df$tmax)
+
+phrases_df$duration <- phrases_df$tmax - phrases_df$tmin
+phrases_df$ParticipantID <- str_extract(phrases_df$SoundfileID, "^[A-Z]+\\d+")
+phrases_df$Language <- ifelse(str_detect(phrases_df$SoundfileID, "_L1_"), "L1", "L2")
+phrases_df$Task <- ifelse(str_detect(phrases_df$SoundfileID, "_Task1"), "Task1", "Task2")
+phrases_df$TransitionPoint <- phrases_df$tmax
+phrases_df <- phrases_df %>%
+  group_by(ParticipantID, Language, Task) %>%
+  mutate(PauseDuration = ifelse(text == 1, duration, 0)) %>%
+  ungroup()
+
+print(phrases_df)
+```
+
+## Prepare "nuclei_df" data frame
+```{r}
+nuclei_df <- df[startsWith(df$tier, "Nuclei"),]
+nuclei_df <- nuclei_df[!is.na(nuclei_df$text), ]
+
+nuclei_df$tmax <- as.double(nuclei_df$tmax)
+
+nuclei_df$ParticipantID <- gsub("(.*)_L[12]_Task[12]\\.wav", "\\1", nuclei_df$SoundfileID)
+nuclei_df$Language <- gsub(".*_(L[12])_Task[12]\\.wav", "\\1", nuclei_df$SoundfileID)
+nuclei_df$Task <- gsub(".*_L[12]_(Task[12])\\.wav", "\\1", nuclei_df$SoundfileID)
+
+print(nuclei_df)
+```
+
+
+```{r}
+dfauto_L1_Task1 <- dfauto_df[dfauto_df$Language == "L1" & dfauto_df$Task == "Task1", ]
+
+dfauto_L1_Task1$ypos <- seq_along(dfauto_L1_Task1$tmin)
+
+plot_L1_Task1 <-  ggplot(dfauto_L1_Task1, aes(x = tmin, xend = tmax, y = SoundfileID, yend = SoundfileID)) +
+  geom_segment(aes(color = SoundfileID), size = 1) +
+  theme_minimal() +
+  labs(title = "Pauses in Soundtracks",
+       x = "Time (seconds)",
+       y = "Soundtrack ID")
+```
+
+```{r}
+dfauto_L1_Task2 <- dfauto_df[dfauto_df$Language == "L1" & dfauto_df$Task == "Task2", ]
+
+dfauto_L1_Task2$ypos <- seq_along(dfauto_L1_Task2$tmin)
+
+plot_L1_Task2 <- ggplot(dfauto_L1_Task2, aes(x = tmin, xend = tmax, y = SoundfileID, yend = SoundfileID)) +
+  geom_segment(aes(color = SoundfileID), size = 1) +
+  theme_minimal() +
+  labs(title = "Pauses in Soundtracks",
+       x = "Time (seconds)",
+       y = "Soundtrack ID")
+```
+
+```{r}
+dfauto_L2_Task1 <- dfauto_df[dfauto_df$Language == "L2" & dfauto_df$Task == "Task1", ]
+
+dfauto_L2_Task1$ypos <- seq_along(dfauto_L2_Task1$tmin)
+
+plot_L2_Task1 <- ggplot(dfauto_L2_Task1, aes(x = tmin, xend = tmax, y = SoundfileID, yend = SoundfileID)) +
+  geom_segment(aes(color = SoundfileID), size = 1) +
+  theme_minimal() +
+  labs(title = "Pauses in Soundtracks",
+       x = "Time (seconds)",
+       y = "Soundtrack ID")
+```
+
+```{r}
+dfauto_L2_Task2 <- dfauto_df[dfauto_df$Language == "L2" & dfauto_df$Task == "Task2", ]
+
+dfauto_L2_Task2$ypos <- seq_along(dfauto_L2_Task2$tmin)
+
+plot_L2_Task2 <- ggplot(dfauto_L2_Task2, aes(x = tmin, xend = tmax, y = SoundfileID, yend = SoundfileID)) +
+  geom_segment(aes(color = SoundfileID), size = 1) +
+  theme_minimal() +
+  labs(title = "Pauses in Soundtracks",
+       x = "Time (seconds)",
+       y = "Soundtrack ID")
+```
+
+```{r}
+library(patchwork)
+
+plot_L1_Task2 <- plot_L1_Task2 + theme(legend.position = "none")
+plot_L2_Task2 <- plot_L2_Task2 + theme(legend.position = "none")
+
+combined_plot <- plot_L1_Task2 + plot_L2_Task2 
+
+combined_plot_layout <- combined_plot + plot_layout(ncol = 2, nrow = 1)
+
+combined_plot_layout
+```
+
+```{r}
+library(stringr)
+
+participant_plots <- lapply(unique(phrases_df$ParticipantID), function(participant) {
+  participant_df <- phrases_df %>% filter(ParticipantID == participant)
+  
+  ggplot(participant_df, aes(x = tmin, xend = tmax, y = as.factor(text), yend = as.factor(text))) +
+    geom_segment(aes(color = as.factor(text)), size = 1) +
+    scale_color_manual(values = c("0" = "blue", "1" = "red")) +
+    facet_grid(Language ~ Task) +
+    labs(title = paste("Phrases for Participant", participant),
+         x = "Time (seconds)",
+         y = "Phrase (0 = Speech, 1 = Silent Pause)",
+         color = "Phrase") +
+    theme_minimal()
+})
+
+for (plot in participant_plots) {
+  print(plot)
+}
+
+```
+
+```{r}
+participant_plots <- lapply(unique(dfauto_df$ParticipantID), function(participant) {
+  participant_df <- dfauto_df %>% filter(ParticipantID == participant)
+  
+  ggplot(participant_df, aes(x = tmin, xend = tmax, y = as.factor(text), yend = as.factor(text))) +
+    geom_segment(aes(color = as.factor(text)), size = 1) +
+    scale_color_manual(values = c("0" = "green", "1" = "purple")) +
+    facet_grid(Language ~ Task) +
+    labs(title = paste("Dfauto for Participant", participant),
+         x = "Time (seconds)",
+         y = "0 = Speech, 1 = Filled Pause",
+         color = "Dfauto") +
+    theme_minimal()
+})
+
+for (plot in participant_plots) {
+  print(plot)
+}
+
+```
+
+```{r}
+t_dfauto_df <- dfauto_df
+t_phrases_df <- phrases_df
+
+t_phrases_df$text <- as.numeric(phrases_df$text)
+t_dfauto_df$text <- as.numeric(dfauto_df$text) + 2
+
+all_participants <- unique(c(t_dfauto_df$ParticipantID))
+
+participant_plots_2 <- lapply(all_participants, function(participant) {
+  phrases_participant_df <- t_phrases_df %>% filter(ParticipantID == participant)
+  dfauto_participant_df <- t_dfauto_df %>% filter(ParticipantID == participant)
+  
+  combined_df <- rbind(phrases_participant_df, dfauto_participant_df)
+
+  ggplot(combined_df, aes(x = tmin, xend = tmax, y = as.factor(text), yend = as.factor(text))) +
+    geom_segment(aes(color = as.factor(text)), size = 1) +
+    scale_color_manual(values = c("0" = "blue", "1" = "red", "2" = "green", "3" = "purple")) +
+    facet_grid(Language ~ Task) +
+    scale_y_discrete(breaks = c("0", "1", "2", "3"), labels = c("Phrase - Speech", "Phrase - Silent Pause", "DFAuto - Speech", "DFAuto - Filled Pause")) +
+    labs(title = paste("Phrases and Dfauto for Participant", participant),
+         x = "Time (seconds)",
+         y = "Phrase/Dfauto (0,1 = Phrases, 2,3 = Dfauto)",
+         color = "Phrase/Dfauto") +
+    theme_minimal()
+})
+
+for (plot in participant_plots_2) {
+  print(plot)
+}
+```
+
+
+## Utterance Fluency Measurements
+
+We are going to investigate the fluctuations of different aspects of fluency according to the recordings that we have from different participants. First, we need to take a look at these aspects and define the measurements and metrics of fluency on our dataset.
+
+Based on the article "Fluency in Second Language Testing: Insights From Different Disciplines (2018)" looking at the aspects of fluency from the perspective of Applied linguistics, we can define the following measurements as the main measures of utterance fluency. 
+
+- Speech rate = (Number of syllables/total time)
+- Pruned speech rate Articulation rate = (Number of syllables – number of non-fluent syllables)/total time
+- Articulation rate = (Number of syllables/speaking time)
+- Pace = (Number of stressed syllables/total time)
+- Mean length of utterance = (Total speaking time/number of utterances or Number of syllables/number of utterances)
+- Number of silent pauses (per minute) = (Number of silent pauses/total time or speaking time)
+- Mean duration of silent pauses = (Pausing time/number of silent pauses)
+- Phonation time ratio = (Speaking time/Total time)
+- Number of filled pauses (per minute) = (Number of filled pauses/total time or speaking time)
+- Number of repetitions (per minute) = (Number of repetitions/total time or speaking time)
+- Number of repairs (per minute) = (Number of repairs and restarts/total time or speaking time)
+
+Later on in the same article we read "Objective measures of speech rate and pausing (measured in different ways) have, in later studies, always come up as significant predictors of perceived fluency"
+
+We have the dataset of recordings from linguistic tasks done by participants with different fluency levels, noted by the PRAAT notation (scheme). The objective measures mentioned above can be developed based on the dataset that we have.
+
+Let's choose a few measurements to start with:
+
+- Speech Rate
+- Articulation Rate
+- Number of silent pauses (per minute)
+- Mean length of silent pauses (per minute)
+
+Apart from the objective measures of utterance fluency, we should also take a look at the measures of lexical complexity. As the main aspect of lexical complexity, we can consider the frequency of the occurance of each word in an external corpus. The PRAAT method introduces the variable "Lg10WF" which is the log frequency of occurrence in an external corpus and we can develop a new measurement based on this variable for lexical complexity.
+
+- Accumulated complexity = (Sum of all word frequencies throughout the task)
+- Others? (Discuss later)
+
+## Variable development
+
+| participant | task | l1 | l2 | speech_rate | articulation_rate | silent_pause_per_min | mean_length_silent_pause_per_min |
+|-------------|------|----|----|-------------|-------------------|----------------------|----------------------------------|
+| 1           | 1    | 1  | 0  | 10          | 12                | 14                   | 15                               |
+| ...         | ..   | .. | .. | ..          | ..                | ..                   | ..                               |
+
+We need to develop our new dataset according to the example provided above. All the measurements mentioned in the previous section about objective fluency, must be added to this dataset. We can later add the measurements of lexical complexity to the same dataset.
+
+### Speech Rate
+
+Calculating the speech rate for each task is a relatively easy thing to do. According to the article(1) we define "Speech Rate" with the formula "Number of syllables/total time". The only thing we need to do is to count the number of syllables used in each task and divide it by the total duration of the performance of the task. The variable "Nuclei" can be used to our convenience since it's an accumulating value counting up all the syllables in the task.
+
+- Get the last "Nuclei" value in the task performance
+- Divide by the total duration of task
+
+### Articulation Rate
+
+The Articulation Rate calculation is quite similar to the Speech Rate. The only difference is that for Articulation Rate, we don't divide the number of syllables by the total duration of the task, but we devide it by the duration in which the performer is speaking and not pausing.
+
+In order to calculate the Speaking time of each task, we can look at the interval variables that we have "Phrases", "DFAuto". We can sum up all the intervals where (Phrases = 0 or DFAuto = 1). After we have the Speaking time of the task, we can easily calculate the Articulation Rate for each participant.
+
+### Silent Pauses (per minute)
+
+In order to calculate this variable, we need to count all the intervals where "Phrases = 1" and then divide it by the total duration of the task.
+
+### Mean length silent pauses (per minute)
+
+We will call this variable MLSP from now on. The calculation of MLSP is very similar to the previous variable. With the difference that instead of counting the silent pause intervals, we need to sum the intervals and get the Mean value of these silent pause interals. And finally we divide the value by the duration of the task.
+
+
+## TimeSeries variable development
+
+In the previous section we introduced 4 different measurement variables for objective fluency. Our main research question is about the investigation of the flucations of each of these variables throughout the performance of each task by each participant. Therefore we need to create a timeseries dataset off of each of these variables point in time. This way we will be able to look at the flucations.
+
+The following table needs to be created per each performed task:
+
+| L1 | L2 | Task | timestamp | speech_rate | articulation_rate | silent_pause_per_min | mean_length_silent_pause_per_min |
+|----|----|------|-----------|-------------|-------------------|----------------------|----------------------------------|
+| 1  | 0  | 1    | 10        | 10          | 12                | 13                   | 14                               |
+|    |    |      | 20        | 11          | 12                | 14                   | 10                               |
+| .. | .. | ..   | ..        | ..          | ..                | ..                   | ..                               |
+
+Using a step of 10 seconds in our example, we create the timeseries dataset for the defined values speech_rate, articulation_rate, 
+silent_pause_per_min, mean_length_silent_pause_per_min.
+
+Now we can start investigating the fluctuations of each of these variables through time.
+
+```{r}
+# Speech rate (Number of syllables/ total time)
+library(dplyr)
+
+calculate_speech_rate <- function(data, language, task) {
+  
+  filtered_data <- data %>%
+    filter(Language == language, Task == task)
+  
+  speech_rates <- c()
+  time_intervals <- seq(0, max(filtered_data$tmax), by = TIME_INTERVAL)
+  
+  total_nucleis <- 0
+  for (i in 1:(length(time_intervals) - 1)) {
+    start_time <- time_intervals[i]
+    end_time <- time_intervals[i + 1]
+  
+    timespan <- filtered_data[filtered_data$tmax >= start_time & filtered_data$tmax <= end_time,]
+    timespan_ordered <- timespan[order(timespan$tmax),]
+
+    nuclei_count <- as.numeric(timespan[nrow(timespan),]$text) - total_nucleis
+
+    if (length(nuclei_count) < 1) {
+      speech_rates <- c(speech_rates, 0)
+      next
+    }
+    
+    rate <- nuclei_count / TIME_INTERVAL
+    total_nucleis = total_nucleis + nuclei_count
+
+    speech_rates <- c(speech_rates, rate)
+  }
+
+  return(data.frame(TimeInterval = time_intervals[-length(time_intervals)], SpeechRate = speech_rates))
+}
+
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+speech_rate_data <- data.frame()
+
+for (language in languages) {
+  for (task in tasks) {
+    nuclei_df_participant <- nuclei_df %>% filter(ParticipantID == SELECTED_PARTICIPANT_ID)
+
+    result <- calculate_speech_rate(nuclei_df_participant, language, task)
+    result$Language <- language
+    result$Task <- task
+    speech_rate_data <- bind_rows(speech_rate_data, result)
+  }
+}
+
+ggplot(speech_rate_data, aes(x = TimeInterval, y = SpeechRate, group = interaction(Language, Task), color = interaction(Language, Task))) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Speech Rate Over Time",
+    x = "Time Interval (seconds)",
+    y = "Speech Rate"
+  ) +
+  theme_minimal() +
+  facet_grid(Language ~ Task)
+
+```
+
+```{r}
+#  Articulation Rate (Number of syllables/ speaking time)
+
+# df$ParticipantID <- gsub("(.*)_L[12]_Task[12]\\.wav", "\\1", df$SoundfileID)
+# df$Language <- gsub(".*_(L[12])_Task[12]\\.wav", "\\1", df$SoundfileID)
+# df$Task <- gsub(".*_L[12]_(Task[12])\\.wav", "\\1", df$SoundfileID)
+
+calculate_articulation_rate <- function(nuclei_data, phrases_data, language, task) {
+  
+  nuclei_filtered <- nuclei_data %>% filter(Language == language, Task == task)
+  
+  phrases_filtered <- phrases_data %>% filter(Language == language, Task == task)
+  
+  silent_pause_intervals <- phrases_filtered %>%
+    filter(text == 1) %>%
+    select(tmin, tmax) %>%
+    arrange(tmin)
+  
+  speaking_time <- 0
+  for (i in 1:(nrow(silent_pause_intervals) - 1)) {
+    speaking_time <- speaking_time + (silent_pause_intervals$tmin[i + 1] - silent_pause_intervals$tmax[i])
+  }
+  
+  total_time <- max(nuclei_filtered$tmax)
+  number_of_syllables <- nrow(nuclei_filtered)
+  
+  time_intervals <- seq(0, total_time, by = TIME_INTERVAL)
+  articulation_rates <- numeric(length(time_intervals))
+
+  for (i in 1:length(time_intervals)) {
+    start_time <- time_intervals[i]
+    end_time <- start_time + TIME_INTERVAL
+    
+    syllables_in_interval <- nuclei_filtered %>%
+      filter(tmax >= start_time & tmax <= end_time)
+    
+    syllables_count <- nrow(syllables_in_interval)
+    
+    if (speaking_time > 0) {
+      articulation_rates[i] <- syllables_count / TIME_INTERVAL
+    } else {
+      articulation_rates[i] <- 0
+    }
+  }
+  
+  result <- data.frame(
+    Language = language,
+    Task = task,
+    TimeInterval = time_intervals,
+    ArticulationRate = articulation_rates
+  )
+  
+  return(result)
+}
+
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+articulation_rate_data <- data.frame()
+
+for (language in languages) {
+  for (task in tasks) {
+    nuclei_df_participant <- nuclei_df %>% filter(ParticipantID == SELECTED_PARTICIPANT_ID)
+    phrases_df_participant <- phrases_df %>% filter(ParticipantID == SELECTED_PARTICIPANT_ID)
+
+    result <- calculate_articulation_rate(nuclei_df_participant, phrases_df_participant, language, task)
+    articulation_rate_data <- bind_rows(articulation_rate_data, result)
+  }
+}
+
+ggplot(articulation_rate_data, aes(x = TimeInterval, y = ArticulationRate, group = interaction(Language, Task), color = interaction(Language, Task))) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Articulation Rate Over Time",
+    x = "Time Interval (seconds)",
+    y = "Articulation Rate"
+  ) +
+  theme_minimal() +
+  facet_grid(Language ~ Task)
+
+```
+
+
+```{r}
+# Number of Silent Pauses
+phrases_df_participant <- phrases_df %>% filter(ParticipantID == SELECTED_PARTICIPANT_ID)
+
+calculate_number_of_silent_pauses <- function(phrases_data, language, task) {
+  
+  phrases_filtered <- phrases_data %>% filter(Language == language, Task == task)
+  
+  number_of_silent_pauses <- phrases_filtered %>%
+    filter(text == 1) %>%
+    group_by(interval = cut(tmax, breaks = seq(0, 120, by = TIME_INTERVAL))) %>%
+    summarise(Count = n()) %>%
+    ungroup()
+  
+  number_of_silent_pauses$SilentPauses <- number_of_silent_pauses$Count
+  
+  number_of_silent_pauses$Language <- language
+  number_of_silent_pauses$Task <- task
+  
+  return(number_of_silent_pauses)
+}
+
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+number_of_silent_pauses_data <- data.frame()
+
+for (language in languages) {
+  for (task in tasks) {
+    result <- calculate_number_of_silent_pauses(phrases_df_participant, language, task)
+    number_of_silent_pauses_data <- bind_rows(number_of_silent_pauses_data, result)
+  }
+}
+
+
+ggplot(number_of_silent_pauses_data, aes(x = interval, y = SilentPauses, color = interaction(Language, Task), group = 1)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Number of Silent Pauses",
+    x = "Time Interval (seconds)",
+    y = "Number of Silent Pauses"
+  ) +
+  theme_minimal() +
+  facet_grid(Language ~ Task) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+```
+
+
+```{r}
+# Number of filled puases
+
+dfauto_df_participant <- dfauto_df %>% filter(ParticipantID == SELECTED_PARTICIPANT_ID)
+
+calculate_number_of_filled_pauses <- function(dfauto_data, language, task) {
+  
+  dfauto_filtered <- dfauto_data %>%
+    filter(Language == language, Task == task)
+  
+  number_of_filled_pauses <- dfauto_filtered %>%
+    filter(text == 1) %>%
+    group_by(interval = cut(tmax, breaks = seq(0, 120, by = TIME_INTERVAL))) %>%
+    summarise(Count = n()) %>%
+    ungroup()
+  
+  number_of_filled_pauses$FilledPauses <- number_of_filled_pauses$Count
+  
+  number_of_filled_pauses$Language <- language
+  number_of_filled_pauses$Task <- task
+  
+  return(number_of_filled_pauses)
+}
+
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+number_of_filled_pauses_data <- data.frame()
+
+for (language in languages) {
+  for (task in tasks) {
+    result <- calculate_number_of_filled_pauses(dfauto_df_participant, language, task)
+    number_of_filled_pauses_data <- bind_rows(number_of_filled_pauses_data, result)
+  }
+}
+
+
+ggplot(number_of_filled_pauses_data, aes(x = interval, y = FilledPauses, color = interaction(Language, Task), group = 1)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Number of Filled Pauses",
+    x = "Time Interval (seconds)",
+    y = "Number of Filled Pauses"
+  ) +
+  theme_minimal() +
+  facet_grid(Language ~ Task) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+```
+
+# Predicting filled or silent pauses for one participant in each language and task
+
+## Random Forest - Silent Pauses
+
+Here we are getting the warning that there are very few unique values for the number of silent pauses. Since they vary in a range of 0 to 10, Random Forest might not be the best model for regression here. But we also don't want to do classification based on the number of pauses.
+
+(QUESTION) => Should we keep this a continuous regression rather than a classification?
+
+We are also seeing a high value for the MSE which means there is a high amount of errors in the predictions.
+
+```{r}
+library(randomForest)
+
+silentpauses_df <- number_of_silent_pauses_data %>%
+  group_by(Language, Task) %>%
+  arrange(interval) %>%
+  mutate(
+    lag1 = lag(SilentPauses, 1),
+    lag2 = lag(SilentPauses, 2)
+  ) %>%
+  ungroup() 
+
+silentpauses_df <- na.omit(silentpauses_df)
+
+silentpauses_df$Language <- as.factor(silentpauses_df$Language)
+silentpauses_df$Task <- as.factor(silentpauses_df$Task)
+
+train_index <- floor(0.8 * nrow(silentpauses_df))
+
+train_data <- silentpauses_df[1:train_index, ]
+test_data <- silentpauses_df[(train_index + 1):nrow(silentpauses_df), ]
+
+rf_model <- randomForest(SilentPauses ~ lag1 + lag2 + Language + Task, data = train_data)
+
+predictions <- predict(rf_model, newdata = test_data)
+
+mse <- mean((predictions - test_data$SilentPauses)^2)
+
+mae <- mean(abs(predictions - test_data$SilentPauses))
+
+print("===== MSE =====")
+print(mse)
+print("===== MAE =====")
+print(mae)
+```
+
+```{r}
+silentpauses_df$interval <- as.character(silentpauses_df$interval)
+silentpauses_df$interval_n <- as.numeric(str_extract(silentpauses_df$interval, "(?<=,)(\\d+)(?=\\])"))
+
+latest_data <- silentpauses_df %>%
+  group_by(Language, Task) %>%
+  summarize(latest_interval = max(interval_n), 
+            latest_SilentPauses = last(SilentPauses),
+            lag1 = nth(SilentPauses, n()-1),
+            lag2 = nth(SilentPauses, n()-2)) %>%
+  ungroup()
+
+predict_data <- latest_data %>%
+  select(-latest_SilentPauses) %>%
+  mutate(interval = paste0("(", latest_interval, ",", latest_interval + TIME_INTERVAL, "]"))
+
+predictions <- predict(rf_model, newdata = predict_data)
+predict_data$Predicted_SilentPauses <- predictions
+predicted_data <- predict_data %>%
+  mutate(interval = paste0("(", latest_interval + TIME_INTERVAL, ",", latest_interval + 2*TIME_INTERVAL, "]"),
+         SilentPauses = Predicted_SilentPauses,
+         Count = Predicted_SilentPauses,
+         Type = 'Predicted') %>%
+  select(-latest_interval, -Predicted_SilentPauses, -lag1, -lag2)
+
+number_of_silent_pauses_data$Type <- "Observed"
+combined_data <- rbind(number_of_silent_pauses_data, predicted_data)
+
+ggplot(combined_data, aes(x = interval, y = SilentPauses, color = interaction(Language, Task), group = 1)) +
+  geom_line(aes(color = interaction(Language, Task))) +
+  geom_point(data = subset(combined_data, Type == 'Observed'), aes(color = interaction(Language, Task))) +
+  geom_point(data = subset(combined_data, Type == 'Predicted'), color = "red", size = 4, shape = 17) +
+  labs(
+    title = "Number of Silent Pauses",
+    x = "Time Interval (seconds)",
+    y = "Number of Silent Pauses"
+  ) +
+  theme_minimal() +
+  facet_grid(Language ~ Task) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+## Random Forest - Filled Pauses
+
+```{r}
+library(randomForest)
+
+filledpauses_df <- number_of_filled_pauses_data %>%
+  group_by(Language, Task) %>%
+  arrange(interval) %>%
+  mutate(
+    lag1 = lag(FilledPauses, 1),
+    lag2 = lag(FilledPauses, 2)
+  ) %>%
+  ungroup() 
+
+filledpauses_df <- na.omit(filledpauses_df)
+
+filledpauses_df$Language <- as.factor(filledpauses_df$Language)
+filledpauses_df$Task <- as.factor(filledpauses_df$Task)
+
+train_index <- floor(0.8 * nrow(filledpauses_df))
+
+train_data <- filledpauses_df[1:train_index, ]
+test_data <- filledpauses_df[(train_index + 1):nrow(filledpauses_df), ]
+
+rf_model <- randomForest(FilledPauses ~ lag1 + lag2 + Language + Task, data = train_data)
+
+predictions <- predict(rf_model, newdata = test_data)
+
+mse <- mean((predictions - test_data$FilledPauses)^2)
+
+mae <- mean(abs(predictions - test_data$FilledPauses))
+
+print("===== MSE =====")
+print(mse)
+print("===== MAE =====")
+print(mae)
+```
+
+```{r}
+filledpauses_df$interval <- as.character(filledpauses_df$interval)
+filledpauses_df$interval_n <- as.numeric(str_extract(filledpauses_df$interval, "(?<=,)(\\d+)(?=\\])"))
+
+latest_data <- filledpauses_df %>%
+  group_by(Language, Task) %>%
+  summarize(latest_interval = max(interval_n), 
+            latest_FilledPauses = last(FilledPauses),
+            lag1 = nth(FilledPauses, n()-1),
+            lag2 = nth(FilledPauses, n()-2)) %>%
+  ungroup()
+
+predict_data <- latest_data %>%
+  select(-latest_FilledPauses) %>%
+  mutate(interval = paste0("(", latest_interval, ",", latest_interval + TIME_INTERVAL, "]"))
+
+predictions <- predict(rf_model, newdata = predict_data)
+predict_data$Predicted_FilledPauses <- predictions
+predicted_data <- predict_data %>%
+  mutate(interval = paste0("(", latest_interval + TIME_INTERVAL, ",", latest_interval + 2*TIME_INTERVAL, "]"),
+         FilledPauses = Predicted_FilledPauses,
+         Count = Predicted_FilledPauses,
+         Type = 'Predicted') %>%
+  select(-latest_interval, -Predicted_FilledPauses, -lag1, -lag2)
+
+number_of_filled_pauses_data$Type <- "Observed"
+combined_data <- rbind(number_of_filled_pauses_data, predicted_data)
+
+ggplot(combined_data, aes(x = interval, y = FilledPauses, color = interaction(Language, Task), group = 1)) +
+  geom_line(aes(color = interaction(Language, Task))) +
+  geom_point(data = subset(combined_data, Type == 'Observed'), aes(color = interaction(Language, Task))) +
+  geom_point(data = subset(combined_data, Type == 'Predicted'), color = "red", size = 4, shape = 17) +
+  labs(
+    title = "Number of Filled Pauses",
+    x = "Time Interval (seconds)",
+    y = "Number of Filled Pauses"
+  ) +
+  theme_minimal() +
+  facet_grid(Language ~ Task) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+# Predicting transition point and length of silent pauses
+```{r}
+
+participant_data <- phrases_df[phrases_df$ParticipantID == SELECTED_PARTICIPANT_ID & phrases_df$Language == 'L1' & phrases_df$Task == 'Task1', ]
+
+set.seed(123) 
+
+train_indices <- sample(1:nrow(phrases_df), 0.8 * nrow(phrases_df))
+train_data <- phrases_df[train_indices, ]
+test_data <- phrases_df[-train_indices, ]
+
+rf_transition <- randomForest(TransitionPoint ~ duration, data = train_data)
+
+rf_duration <- randomForest(PauseDuration ~ duration, data = train_data)
+
+```
+
+
+
+
+

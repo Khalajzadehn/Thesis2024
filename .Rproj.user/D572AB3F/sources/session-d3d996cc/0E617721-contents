@@ -1,0 +1,502 @@
+---
+title: "Statistical Consulting"
+author: "Niloofar Khalajzadeh"
+date: "2023-10-09"
+output: pdf_document
+latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE}
+library(MASS)
+library(dplyr)
+library(lme4)
+library(ordinal)
+library(ggplot2)
+library(tidyverse)
+library(corrplot)
+library(caret)
+library(ggpubr)
+library(e1071)
+library(rpart)
+library(reshape2)
+library(Metrics)
+library(pracma)
+library(emmeans)
+library(multcomp)
+```
+
+```{r}
+experiment_setup <- read.csv("experiment_setup.csv", sep = ";")
+disease_score <- read.csv("disease_score.csv", sep = ";")
+```
+
+```{r warning=FALSE}
+get_cultivar_label <- function(x) {
+  experiment_setup[experiment_setup$Cultivar == x,][1,]$Sensitivity
+}
+
+disease_score$sensitivity <- unlist(lapply(disease_score$Cultivar, get_cultivar_label))
+
+n <- dim(disease_score)[1]
+disease_score <- disease_score[1:(n-3),]
+```
+
+```{r}
+disease_score$T9.RGR..cm. <- as.numeric(gsub(",", ".", disease_score$T9.RGR..cm.))
+disease_score$T9.length..cm. <- as.numeric(gsub(",", ".", disease_score$T9.length..cm.))
+disease_score <- disease_score %>%
+  filter(!is.na(sensitivity), sensitivity != "")
+disease_score <- disease_score %>% filter(T9.length..cm. >= 0, T9.RGR..cm. >= 0)
+
+disease_score_clean <- subset(disease_score, Pathogen != "negative control")
+disease_score_clean <- na.omit(disease_score_clean)
+
+```
+
+```{r}
+disease_score_clean$Treatment <- disease_score_clean$Treatment..1.34. 
+disease_score_clean$Block <- disease_score_clean$Block.nr. 
+disease_score_clean$Plant_nr <- disease_score_clean$Plant.nr.
+disease_score_clean$T3 <- disease_score_clean$T3.disease..0.1. 
+disease_score_clean$T4 <- disease_score_clean$T4.disease....leaves. 
+disease_score_clean$T5_per <- disease_score_clean$T5.disease.... 
+disease_score_clean$T5 <- disease_score_clean$T5.affected..0.1. 
+disease_score_clean$T6_per <- disease_score_clean$T6.disease.... 
+disease_score_clean$T6 <- disease_score_clean$T6.affected..0.1. 
+disease_score_clean$T7_per <- disease_score_clean$T7.disease.... 
+disease_score_clean$T7 <- disease_score_clean$T7.affected..0.1. 
+disease_score_clean$T8_per <- disease_score_clean$T8.disease.... 
+disease_score_clean$T8 <- disease_score_clean$T8.affected..0.1. 
+disease_score_clean$T8_con <- disease_score_clean$T8.mate.disease..0.3. 
+disease_score_clean$T9_per <- disease_score_clean$T9.disease.... 
+disease_score_clean$T9 <- disease_score_clean$T9.affected..0.1. 
+disease_score_clean$T9_con <- disease_score_clean$T9.mate.disease..0.3. 
+disease_score_clean$T5_length <- disease_score_clean$T5.length..cm. 
+disease_score_clean$T5_RGR <- disease_score_clean$T5.Relative.Growth.Rate.RGR..cm. 
+disease_score_clean$T9_length <- disease_score_clean$T9.length..cm. 
+disease_score_clean$T9_RGR <- disease_score_clean$T9.RGR..cm. 
+disease_score_clean$sensitivity_f <- disease_score_clean$sensitivity
+
+disease_score_clean$time_to_first <- apply(disease_score_clean[,c("T3", "T5", "T6", "T7", "T8","T9")], 1, function(x) {
+    affected_week <- which(x == 1)
+    if (length(affected_week) == 0) {
+        return(70)
+    } else {
+        return(affected_week[1])
+    }
+})
+
+new_dataframe <- data.frame()
+
+new_dataframe <- disease_score_clean %>%
+  select(sensitivity_f, Treatment, Soiltype, Cultivar, Pathogen, Plant_nr, Block, T3, T4, T5, T5_per, T6, T6_per, T7, T7_per, T8, T8_per, T9, T9_per, time_to_first, T5_length, T9_length, T5_RGR, T9_RGR, T8_con, T9_con)
+
+new_dataframe$sensitivity_f <- factor(new_dataframe$sensitivity_f, ordered = TRUE, 
+                                    levels = c("Very sensitive", "Sensitive", "Reasonably sensitive", 
+                                               "intermediate with some damage", "Relatively tolerant", "tolerant", 
+                                               "highly tolerant", "Resistant"))
+
+new_dataframe$T3 <- ifelse(new_dataframe$T3 == 0, 0, 1)
+new_dataframe$T5 <- ifelse(new_dataframe$T5 == 0, 0, 1)
+new_dataframe$T6 <- ifelse(new_dataframe$T6 == 0, 0, 1)
+new_dataframe$T7 <- ifelse(new_dataframe$T7 == 0, 0, 1)
+new_dataframe$T8 <- ifelse(new_dataframe$T8 == 0, 0, 1)
+new_dataframe$T9 <- ifelse(new_dataframe$T9 == 0, 0, 1)
+
+new_dataframe$Pathogen <- factor(disease_score_clean$Pathogen)
+new_dataframe$Soiltype <- factor(disease_score_clean$Soiltype)
+new_dataframe$Cultivar <- factor(disease_score_clean$Cultivar)
+new_dataframe$Treatment <- factor(disease_score_clean$Treatment)
+
+new_dataframe$T8_con <- factor(new_dataframe$T8_con, levels = 0:3)
+new_dataframe$T9_con <- factor(new_dataframe$T9_con, levels = 0:3)
+new_dataframe$T5_length <- as.numeric(sub(",", ".", new_dataframe$T5_length, fixed = TRUE))
+new_dataframe$T9_length <- as.numeric(sub(",", ".", new_dataframe$T9_length, fixed = TRUE))
+new_dataframe$T5_RGR <- as.numeric(sub(",", ".", new_dataframe$T5_RGR, fixed = TRUE))
+new_dataframe$T9_RGR <- as.numeric(sub(",", ".", new_dataframe$T9_RGR, fixed = TRUE))
+```
+
+```{r}
+summary(new_dataframe)
+```
+
+```{r}
+# Bar plot for Sensitivity_f
+ggplot(new_dataframe) + aes(x = sensitivity_f) +
+  geom_bar(fill = "darkmagenta") + coord_flip() +
+  theme_minimal() + 
+  labs(title = "Bar Plot of Sensitivity", x = "Sensitivity", y = "Count")
+```
+
+
+```{r}
+# Bar plot for Pathogen
+ggplot(new_dataframe, aes(x = Pathogen)) +
+  geom_bar(fill = "coral") + 
+  theme_minimal() +
+  labs(title = "Bar Plot of Pathogen", x = "Pathogen", y = "Count")
+```
+
+```{r}
+# Bar plot for Cultivar
+ggplot(new_dataframe, aes(x = Cultivar)) +
+  geom_bar(fill = "blue", width = 0.5) + coord_flip() +
+  theme_minimal() +
+  labs(title = "Bar Plot of Cultivar", x = "Cultivar", y = "Count")
+```
+
+```{r}
+# Bar plot for Soil type
+ggplot(new_dataframe, aes(x = Soiltype)) +
+  geom_bar(fill = "green", width = 0.5) +
+  theme_minimal() +
+  labs(title = "Bar Plot of Soil type", x = "Soil type", y = "Count")
+```
+
+```{r}
+average_affected_leaves <- aggregate(T4 ~ Cultivar, data = new_dataframe, mean)
+average_affected_leaves_sorted <- average_affected_leaves %>%
+  arrange(desc(T4))
+ggplot(average_affected_leaves_sorted, aes(x = reorder(Cultivar, T4), y = T4)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = "Cultivar", y = "Average Affected Leaves")
+```
+
+
+```{r}
+by_cultivar <- split(new_dataframe, new_dataframe$Cultivar )
+```
+
+
+```{r}
+# plant's frequency
+analysis_by_cultivar_freq <- function(cultivar, with_regression = FALSE) {
+  cultivar_data <- by_cultivar[[cultivar]]
+  
+  combined_data <- list()
+  
+  for (block in unique(cultivar_data$Block)) {
+    block_data <- cultivar_data[cultivar_data$Block == block, ]
+    block_ag <- block_data %>%
+      group_by(Pathogen) %>%
+      summarise(
+        f3 = mean(T3),
+        f5 = mean(T5),
+        f6 = mean(T6),
+        f7 = mean(T7),
+        f8 = mean(T8),
+        f9 = mean(T9),
+      ) %>%
+      pivot_longer(cols = starts_with("f"), names_to = "TimePoint", values_to = "Freq")
+
+    # Add block information
+    block_ag$Block <- block
+    combined_data[[block]] <- block_ag
+  }
+  
+  long_data <- bind_rows(combined_data)
+
+  long_data$TimePoint <- as.numeric(gsub("f", "", long_data$TimePoint))
+
+  r <- ggplot(long_data, aes(x = TimePoint, y = Freq, group = interaction(Block, Pathogen), color = Pathogen)) +
+    geom_line() + 
+    geom_point() +
+    facet_wrap(~Block) +
+    theme_minimal() +
+    labs(title = paste("Affected Plant Frequency over Time by Block and Pathogen for", cultivar),
+         x = "Time Point",
+         y = "Frequency of Affected Plants",
+         color = "Pathogen")
+}
+```
+
+```{r}
+# affected plants rate
+analysis_by_cultivar_percentage <- function(cultivar, with_regression = TRUE) {
+    
+  cultivar_data <- by_cultivar[[cultivar]]
+  
+  combined_data <- list()
+  
+  for (block in unique(cultivar_data$Block)) {
+    block_data <- cultivar_data[cultivar_data$Block == block, ]
+    block_ag <- block_data %>%
+      group_by(Pathogen) %>%
+      summarise(
+        t3 = 0,
+        t5 = mean(T5_per),
+        t6 = mean(T6_per),
+        t7 = mean(T7_per),
+        t8 = mean(T8_per),
+        t9 = mean(T9_per),
+      ) %>%
+      pivot_longer(cols = starts_with("t"), names_to = "TimePoint", values_to = "Percent")
+  
+    # Add block information
+    block_ag$Block <- block
+    combined_data[[block]] <- block_ag
+  }
+  
+  long_data <- bind_rows(combined_data)
+  
+  long_data$TimePoint <- as.numeric(gsub("t", "", long_data$TimePoint))
+  
+  r <- ggplot(long_data, aes(x = TimePoint, y = Percent, group = interaction(Block, Pathogen), color = Pathogen)) +
+    geom_point() + 
+    geom_line() + 
+    facet_wrap(~Block) +
+    theme_minimal() +
+    labs(title = paste(" Percentage of Affected Plant over Time by Block and Pathogen for", cultivar),
+         x = "Time Point",
+         y = "Percentage of Affected Plants",
+         color = "Pathogen")
+}
+```
+
+```{r}
+for (cultivar in unique(new_dataframe$Cultivar)) {
+    print(analysis_by_cultivar_percentage(cultivar, TRUE))
+}
+```
+
+
+```{r}
+# AUC
+analysis_by_cultivar_percentage <- function(cultivar, filtered=FALSE) {
+  cultivar_data <- by_cultivar[[cultivar]]
+  
+  combined_data <- list()
+  auc_data <- data.frame(Block = integer(), Pathogen = character(), Soiltype = character(), AUC = numeric())
+  
+  if (filtered) {
+    cultivar_data <- cultivar_data %>% filter(Pathogen != "Microsclerotia", Soiltype != "Soil")
+  }
+  
+  for (block in unique(cultivar_data$Block)) {
+    block_data <- cultivar_data[cultivar_data$Block == block, ]
+    block_ag <- block_data %>%
+      group_by(Pathogen, Soiltype) %>%
+      summarise(
+        t3 = 0,
+        t5 = mean(T5_per),
+        t6 = mean(T6_per),
+        t7 = mean(T7_per),
+        t8 = mean(T8_per),
+        t9 = mean(T9_per),
+        .groups = "drop"
+      ) %>%
+      pivot_longer(cols = starts_with("t"), names_to = "TimePoint", values_to = "Percent")
+
+    block_ag$Block <- block
+    combined_data[[block]] <- block_ag
+
+# Calculate AUC for each pathogen and soil type within the block
+    for (combo in unique(paste(block_ag$Pathogen, block_ag$Soiltype, sep = "_"))) {
+      combo_data <- block_ag[block_ag$Pathogen == strsplit(combo, "_")[[1]][1] & block_ag$Soiltype == strsplit(combo, "_")[[1]][2], ]
+      time_points <- as.numeric(gsub("t", "", combo_data$TimePoint))
+      percent_values <- combo_data$Percent
+      auc_value <- trapz(time_points, percent_values)
+      auc_data <- rbind(auc_data, data.frame(Block = block, Pathogen = strsplit(combo, "_")[[1]][1], Soiltype = strsplit(combo, "_")[[1]][2], AUC = auc_value, Cultivar = cultivar))
+    }
+  }
+
+  return(auc_data)
+}
+```
+
+```{r}
+auc_results <- list()
+for (cultivar in unique(new_dataframe$Cultivar)) {
+  auc_results[[cultivar]] <- analysis_by_cultivar_percentage(cultivar)
+}
+
+print(auc_results[["Kennedy"]])
+print(auc_results[["Myra"]])
+```
+# Cleaning up 
+Removing Soiltype="Soil" and Pathogen="Microsclerotia"
+
+```{r}
+auc_results <- list()
+for (cultivar in unique(new_dataframe$Cultivar)) {
+  auc_results[[cultivar]] <- analysis_by_cultivar_percentage(cultivar, TRUE)
+}
+
+print(auc_results[["Kennedy"]])
+print(auc_results[["Myra"]])
+print(auc_results[["Barca"]])
+print(auc_results[["Sira"]])
+print(auc_results[["Softone"]])
+print(auc_results[["Stallion"]])
+print(auc_results[["Carey"]])
+print(auc_results[["130.857.000"]])
+print(auc_results[["Alamos"]])
+print(auc_results[["Ilonka"]])
+print(auc_results[["Antonov"]])
+print(auc_results[["Abbey Purple"]])
+print(auc_results[["91.023.000"]])
+print(auc_results[["80.087.000"]])
+print(auc_results[["111.833.000"]])
+```
+
+```{r}
+df_anova <- bind_rows(auc_results)
+df_anova$Block <- as.factor(df_anova$Block)
+
+# ANOVA test
+anova_result <- aov(AUC ~ Cultivar + Block, data = df_anova)
+summary(anova_result)
+
+# estimated marginal means
+emmeans_result <- emmeans(anova_result, specs = ~ Cultivar)
+
+# cumulative link model
+lsd_result <- cld(emmeans_result, adjust = "sidak")
+
+# contrast function
+pairwise_comparisons <- contrast(emmeans_result, method = "pairwise", ref = "Kennedy")
+summary(pairwise_comparisons)
+```
+
+# Pairwise T-test
+
+```{r}
+pairwise.t.test(df_anova$AUC, df_anova$Cultivar, p.adjust.method = "bonferroni")
+```
+
+```{r}
+# Simulate different number of blocks
+
+redistribute_blocks <- function(df, num_new_blocks) {
+  if (num_new_blocks <= 0) {
+    stop("Number of blocks must be a positive integer.")
+  }
+
+  set.seed(123)  
+  shuffled_df <- df[sample(nrow(df)), ]
+
+  # Assign new block numbers
+  shuffled_df$Block <- as.factor(rep(1:num_new_blocks, length.out = nrow(shuffled_df)))
+
+  return(shuffled_df)
+}
+```
+
+```{r}
+# Anova test with new number of blocks
+ddf_anova <- redistribute_blocks(df_anova, 11)
+
+anova_result <- aov(AUC ~ Cultivar + Block, data = ddf_anova)
+summary(anova_result)
+
+# estimated marginal means
+emmeans_result <- emmeans(anova_result, specs = ~ Cultivar)
+
+# cumulative link model
+lsd_result <- cld(emmeans_result, adjust = "sidak")
+
+# contrast function
+pairwise_comparisons <- contrast(emmeans_result, method = "pairwise", ref = "Kennedy")
+summary(pairwise_comparisons)
+```
+
+```{r}
+set.seed(42)
+
+# Get means of each variable per each block
+adjusted_dataframe <- new_dataframe %>%
+  group_by(Cultivar, Block) %>%
+  summarise(
+    T9_per_mean = mean(T9_per, na.rm = TRUE),
+    T5_per_mean = mean(T5_per, na.rm = TRUE),
+    T6_per_mean = mean(T6_per, na.rm = TRUE),
+    T7_per_mean = mean(T7_per, na.rm = TRUE),
+    T8_per_mean = mean(T8_per, na.rm = TRUE),
+    T5_length_mean = mean(T5_length, na.rm = TRUE),
+    T5_RGR_mean = mean(T5_RGR, na.rm = TRUE),
+  ) %>%
+  ungroup()
+
+data_size <- nrow(adjusted_dataframe)
+
+train_indices <- sample(1:data_size, size = round(0.8 * data_size))
+
+train_set <- adjusted_dataframe[train_indices, ]
+test_set <- adjusted_dataframe[-train_indices, ]
+
+#First model with all variables
+model.1 <- lm(T9_per_mean ~ T5_per_mean + T6_per_mean + T7_per_mean + T8_per_mean + T5_length_mean + T5_RGR_mean, data = train_set)
+summary(model.1)
+
+# Second model with earlier time points
+model.2 <- lm(T9_per_mean ~ T5_per_mean + T6_per_mean + T5_length_mean + T5_RGR_mean, data = train_set)
+summary(model.2)
+
+predictions <- predict(model.1, newdata = test_set)
+
+mse <- mean((test_set$T9_per_mean - predictions)^2)
+
+rmse <- sqrt(mse)
+
+print(paste("MSE:", mse))
+print(paste("RMSE:", rmse))
+```
+```{r}
+# Model with only week 5 data
+model_w5 <- lm(T9_per_mean ~ T5_per_mean + T5_length_mean + T5_RGR_mean, data = train_set)
+predictions_w5 <- predict(model_w5, newdata = test_set)
+mse_w5 <- mean((test_set$T9_per_mean - predictions_w5)^2)
+rmse_w5 <- sqrt(mse_w5)
+
+# Model with only week 6 data
+model_w6 <- lm(T9_per_mean ~ T6_per_mean + T5_length_mean + T5_RGR_mean, data = train_set)
+predictions_w6 <- predict(model_w6, newdata = test_set)
+mse_w6 <- mean((test_set$T9_per_mean - predictions_w6)^2)
+rmse_w6 <- sqrt(mse_w6)
+
+print(paste("Week 5 MSE:", mse_w5, "RMSE:", rmse_w5))
+print(paste("Week 6 MSE:", mse_w6, "RMSE:", rmse_w6))
+```
+
+# Splitting cultivars into two sets (Susceptible, Resistnat) based on Mean AUC (affected leaves rate)
+```{r}
+# Assuming auc_results is a list of dataframes, each representing a cultivar
+# Function to calculate the mean AUC for each cultivar
+mean_auc_per_cultivar <- function(df) {
+  mean_auc <- mean(df$AUC, na.rm = TRUE)
+  data.frame(Cultivar = unique(df$Cultivar), Mean_AUC = mean_auc)
+}
+
+# Apply the function to each element in the list and combine the results
+combined_auc_means <- do.call(rbind, lapply(auc_results, mean_auc_per_cultivar))
+
+sorted_auc_means <- combined_auc_means[order(combined_auc_means$Mean_AUC, decreasing = TRUE), ]
+split_index <- ceiling(nrow(sorted_auc_means) / 2)
+
+# Splitting into two sets
+susceptible_cultivars <- sorted_auc_means[1:split_index, ]
+resistant_cultivars <- sorted_auc_means[(split_index + 1):nrow(sorted_auc_means), ]
+```
+
+
+```{r}
+# Splitting the adjusted_dataframe
+resistant_data <- adjusted_dataframe[adjusted_dataframe$Cultivar %in% resistant_cultivars$Cultivar, ]
+susceptible_data <- adjusted_dataframe[adjusted_dataframe$Cultivar %in% susceptible_cultivars$Cultivar, ]
+
+# Adding the "Sensitivity" column
+resistant_data <- resistant_data %>% mutate(Sensitivity = "Resistant")
+susceptible_data <- susceptible_data %>% mutate(Sensitivity = "Susceptible")
+
+T5_t_test_result <- t.test(T5_per_mean ~ Sensitivity, data = rbind(resistant_data, susceptible_data))
+T6_t_test_result <- t.test(T6_per_mean ~ Sensitivity, data = rbind(resistant_data, susceptible_data))
+
+print(T5_t_test_result)
+print(T6_t_test_result)
+```
+

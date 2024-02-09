@@ -1,0 +1,46 @@
+README PRAAT-output files
+
+All files with .merged.txt are created with the Software PRAAT, they are simple tables created from so-called TexGrids.
+
+Each files contains the data for one participant, performing one task, in either their L1 or L2.
+
+The first column is the soundfile-ID:
+AMGOPP1_L1_Task2.wav is the ID of the participant (AMGOPP1), the langueage (L1 or L2), and the task (Task1 or Task2).
+Task1 in L1 is not the exact same task as Task1 in L2, but a very similar task requiring similar linguistic and cognitive demands.
+
+The second column is "tmin": for duration-events, this is the start of the event; for point-events, the start and the end will be the same.
+
+The third column is "tier": the name of the variable. These are the variables related to fluency:
+Phrases: interval variable either 0 (speech) or 1 (silent pause)
+DFauto (English/Dutch): interval variable which is 1 for a filled pause, and 0 for speech
+Nuclei: point variable that is a number counting up, for each nucleus (middle) of a syllable throughout the sound file
+
+The following tiers are all interval-tiers, related to the words, as looked up in an external corpus:
+Lg10WF: Log frequency of occurrence in an external corpus (this is the best variable for lexical complexity)
+SUBTLEXWF: Fequency per million in external corpus
+CDcount: kind of freqency/count in external corpus
+FREQlemma: yet another, frequency of the lemma not the word in external corpus
+FREQlow: yet another frequency count
+SUBTLEXCD: yet another frequency count
+Lg10CD: log of a frequency count
+CDlow: yet another frequency count
+FREQcount: yet another frequency count
+POStags: part of speech tag
+
+The following two tiers are also interval-tiers, related to the words
+FreqDist: measure for frequency of occurrence within the soundfile itself
+Repetitions: measure for repetetiveness of the word until now. It ranges from 0 (word never uttered until now) to 1 (previous word was the same word)
+
+The fourth column is the value of the tier (called 'text')
+Phrases: 1 or 0
+DFauto: 1 or 0
+Nuclei: an absolute number
+Lg10WF etc: a number
+POStags: a code
+FreqDist: a number
+Repetitions: a number ranging from 0 to 1
+
+NOTE that sometimes PRAAT outputs "--undefined--" or "MISSING", which you can change to "NA"
+
+The fifth column is 'tmax', which is the same value of 'tmin' for the point tier "Nuclei", and which is the ending time of interval-tiers
+

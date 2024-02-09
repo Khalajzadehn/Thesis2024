@@ -1,0 +1,182 @@
+\documentclass[a4paper]{article}
+
+
+\newcommand{\Title}{Master Statistics and Data Science - Proposal for the Thesis Project}
+
+
+\setlength{\topmargin}{-1cm}
+\setlength{\oddsidemargin}{0cm}
+\setlength{\evensidemargin}{0cm}
+\setlength{\textheight}{23.5cm}
+\setlength{\textwidth}{15.5cm}
+
+\begin{document}
+
+\thispagestyle{empty}
+
+\begin{center}
+    \LARGE
+    \textbf{\Title}\\[.3\baselineskip]
+    \Large
+    MSc Statistics and Data Science\\
+    Leiden University\\
+   \end{center} 
+
+\large
+
+\subsection*{Period of the project}
+{\it Carrying out the project will account for 30 ECTS, which is equivalent to 21 weeks of 40 hours.}
+\begin{itemize}
+\item Intended period of the project: %<dd / mm / yyyy > - <dd / mm / yyyy >
+\item Intended date for the Midterm Progress Meeting: %< dd / mm / yyyy >
+\end{itemize}
+
+\subsection*{Student }
+Name:                             \\
+Student number:                   \\
+e-mail (U-mail):                           \\
+
+
+\subsection*{Daily Supervisor }
+Name:                           \\% Dr. Initials Last Name  
+e-mail:                         \\
+Institute:                      \\
+Function:                       \\
+
+
+\subsection*{Second supervisor (if applicable)}
+{\it A second supervisor from the master Statistics and Data Science is needed, when the daily supervisor is no staff member of the departments/Institutes of the master }
+
+\noindent Name:                          \\
+e-mail:                        \\
+Institute:                     \\
+Function:                      \\
+
+\subsection*{EMOS (European Master in Official Statistics) project }
+(yes/no)
+
+\subsection*{Intended independent reader (to be filled in by Statistics and Data Science supervisor)}
+{\it Each thesis is judged independently by a second member of the Statistics and Data Science organizations. The independent reader is not involved in the research of the project and has no direct hierarchical relation with the supervisor(s). }
+
+\noindent  Name:                    \\
+e-mail:                            \\
+Institute:                         \\
+Function:                          \\
+
+
+\newpage 
+
+\section{Summary}
+
+\subsection{Title and abstract (max 150 words)}
+
+\subsection{ECTS Justification for the preparation of the Thesis Proposal (max 500 words)}
+	
+{\it The investment for the study and writing of this thesis proposal should be 4 ECTS. Please clarify how many hours were spent on the activities needed for the writing of this thesis proposal. 
+	
+	Write down here your justification of your hours for this thesis proposal, know that you can also include hours spent on further improvement of academic skills (For example presentation workshop / writing workshop or module etc.). 
+}
+\newpage
+\section{DESCRIPTION OF THE PROPOSED RESEARCH PART OF THE THESIS PROJECT}
+
+{\it Write a concise proposal of a maximum of 1200 words. This should contain: }
+
+\subsection{The Research Problem }
+%Introduce the research topic and discuss at least one scientific paper, book chapter or report on the topic
+- explain the research questions
+- linguistic motivations
+- difficulties
+
+\subsection{Research aims}
+
+
+\subsection{Research plan}
+%Be specific here. You may think of the following parts: Data description (in case real data are used), design of simulation experiment (in case a simulation experiment is performed), methods which you will use to address the research question(s).   
+- explain about the dataset
+- explain about PRAAT and ASUs and reference related papers
+- 
+
+\subsection{Expected Results/end product:}
+%List the expected results (e.g. software package, expected results of a data analysis, a concrete advice to a specific stakeholder, results of simulation study, results of methodological research). 
+
+
+\subsection{Reference list: }
+%Cite and list the cited literature into a format according to a common citation style guide of the field of research (APA, MLA, Chicago, IEEE, …) 
+
+\newpage 
+\section{ACTIVITIES TO GET EXPERIENCE AS A WORKING STATISTICIAN/DATA SCIENTIST IN A POSSIBLE FUTURE WORKING ENVIRONMENT}
+
+{\it Formulate, together with your supervisor(s), three concrete working activities in which you will participate during your thesis project. One of these activities should involve developing communication skills. A list of possible activities can be found on Brightspace and in the information for supervisors, but it is allowed to formulate other activities. Give for each of the activity a short description and a short motivation for choosing the activity.}
+
+\subsection{Activity 1}
+
+•	Short description of the activity (max 150 words)\\
+•	Motivation for choosing the activity (max 150 words)\\
+•	What do you expect to gain from the activity?  What skills to you want to improve?\\
+
+\subsection{Activity 2}
+
+•	Short description of the activity (max 150 words)\\
+•	Motivation for choosing the activity (max 150 words)\\
+•	What do you expect to gain from the activity?  What skills to you want to improve?\\
+
+\subsection{Activity 3 (developing communication skills)}
+
+•	Short description of the activity (max 150 words)\\
+•	Motivation for choosing the activity (max 150 words)\\
+•	What do you expect to gain from the activity?  What skills to you want to improve?\\
+
+\newpage
+
+
+\section{WORK PLAN AND SUPERVISION}
+
+\subsection{Supervision}
+
+{\it Describe the arrangements regarding the type and frequency of meetings between student and daily supervisor(s) and on roles and responsibilities. If there is a second supervisor from Statistics \& Data Science, also describe type and frequency of communications between the second supervisor, the daily supervisor and the student.}
+
+
+\subsection{Time Schedule}
+{\it Carrying out the thesis project should take 30 EC (exclusive 4 EC to write this proposal). Present a feasible time schedule of your activities. Note that 30 EC corresponds to 21 weeks full time work. Make a detailed plan (week by week) so that at each supervisor-student meeting, it can be discussed if things are still going as planned, and if not, how to tackle that. Be aware that writing takes time. Indicate what elements can be cut / reduced if necessary. }
+
+
+
+\subsection{Infrastructure}
+{\it Describe the arrangements offered to the student to facilitate the students’ work progress (For example, guest employment, a desk, shared office, computer,  access to a computing server)
+}
+\subsection{Other Courses / Activities:}
+
+{\it -	What courses (how many ECTS) still need to be obtained during the thesis project before graduation. Please adapt your time schedule to incorporate this.
+
+-	Are there  other reasons  that may make it impossible to spend ±21 consecutive weeks on the thesis project? 
+}
+
+\newpage 
+\section{ AGREEMENT PAGE }
+
+The supervisors and student hereby declare that they agree to the arrangements in this proposal.
+\begin{itemize}
+
+\item The supervisors and student hereby declare that they have applied, and will apply good scientific practices, that follow the University Academic Integrity Regulations   and the Ethical Guidelines from Statistical Practice . When in conflict with each other, the University Academic Integrity Regulations should be followed.
+
+\item The supervisors hereby declare that they are aware that all supervisors, the independent reader, and the board of examiners and panel member of independent audits should be able to assess the complete thesis. Furthermore all supervisors and independent reader should be able to view the corresponding programming code.
+
+\item The student hereby declares that he has provided the supervisor with the Documentation for Supervisors
+
+\item The student hereby declares that both this proposal, and its resulting thesis, will be free of plagiarism (cf. Rules and Regulations of the Board of Examiners). 
+
+\end{itemize}
+
+\vspace{\baselineskip} 
+\noindent 
+\begin{tabular}{@{}llll@{}}
+	& \textbf{Name} \phantom{much more space} & \textbf{Signature} \phantom{space}  & \textbf{Date} \phantom{space} \\[.5cm]
+	\textbf{Student} &   & \\[1cm]
+	\textbf{Supervisor} & \\[1cm]
+	\textbf{Supervisor 2} & \\[1cm]
+\end{tabular}
+
+
+
+\noindent This signed proposal should be submitted to the Thesis Committee by uploading it in Brightspace. In case of problems please contact thesis@stat.leidenuniv.nl.
+\end{document}

@@ -1,0 +1,228 @@
+---
+title: "Presentation"
+author: "Niloofar Khalajzadeh"
+date: "2023-06-01"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(corrplot)
+library(caret)
+library(ggpubr)
+library(e1071)
+library(MASS)
+library(rpart)
+```
+
+
+```{r}
+wine <- read.delim("winequality-white.csv", sep=";")
+```
+
+```{r}
+head(wine)
+```
+
+Checking for NAs
+```{r}
+colSums(is.na(wine))
+```
+
+```{r}
+y <- wine$quality
+hist(y, breaks = 6, main="Distribution of Wine Quality",
+ylab = "count",
+ylim=c(0,2500),
+xlab="quality",
+xlim=c(3,8),
+col="darkmagenta")
+```
+
+```{r}
+ A <- ggplot(wine,aes(y=quality,x=fixed.acidity))+
+  geom_smooth(method="loess")
+
+B <- ggplot(wine,aes(y=quality,x=volatile.acidity))+
+  geom_smooth(method="loess")
+
+C <- ggplot(wine,aes(y=quality,x=citric.acid))+
+  geom_smooth(method="loess")
+
+D <- ggplot(wine,aes(y=quality,x=residual.sugar))+
+  geom_smooth(method="loess")
+
+E <- ggplot(wine,aes(y=quality,x=chlorides))+
+  geom_smooth(method="loess")
+
+G <- ggplot(wine,aes(y=quality,x=free.sulfur.dioxide))+
+  geom_smooth(method="loess")
+
+H <- ggplot(wine,aes(y=quality,x=total.sulfur.dioxide))+
+  geom_smooth(method="loess")
+
+I <- ggplot(wine,aes(y=quality,x=density))+
+  geom_smooth(method="loess")
+
+J <- ggplot(wine,aes(y=quality,x=pH))+
+  geom_smooth(method="loess")
+
+K <- ggplot(wine,aes(y=quality,x=sulphates))+
+  geom_smooth(method="loess")
+
+L <- ggplot(wine,aes(y=quality,x=alcohol))+
+  geom_smooth(method="loess")
+```
+
+```{r}
+figure <- ggarrange(A, B, C, D, E, G, H, I, J, K, L, 
+                    ncol = 4, nrow = 3)
+figure
+```
+
+## SVR
+
+```{r}
+set.seed(2809)
+train.wine <- sample(1:nrow(wine), size = round(0.8*nrow(wine)), replace = FALSE)
+test.wine <- which(!(1:nrow(wine) %in% train.wine))
+```
+
+```{r}
+cost <- c(.001, .01, .1, 1, 10)
+epsilon <- c(.001, .01, .1, 1)
+
+train_df <- wine[train.wine,]
+train_df_sc <- train_df
+for (i in 1:ncol(train_df)){
+  if (is.numeric(train_df[,i]))  {
+    train_df_sc[,i] <- as.vector(scale(train_df[,i]))
+  }
+}
+
+tune.out <- tune(svm, quality ~ ., data = train_df_sc, kernel = "radial", ranges = list(cost = cost, epsilon = epsilon))
+tune.out$best.parameters
+
+#tune.out <- tune(svm, quality ~ ., data = train_df_sc, kernel = "linear", ranges = list(cost = cost, epsilon = epsilon))
+#tune.out$best.parameters
+```
+
+```{r}
+perf <- tune.out$performances
+perf$cost <- factor(perf$cost)
+ggplot(perf) + geom_line(aes(epsilon, error, group=cost, color=cost)) +
+scale_x_log10() + scale_y_log10()
+```
+
+```{r}
+#cost.radial = 1
+#epsilon.radial = 0.1
+#cost.linear = 1
+#epsilon.linear = 10
+svrfit <- svm(quality ~ ., data = train_df_sc, kernel = "radial",
+              epsilon = tune.out$best.parameters$epsilon,
+              cost = tune.out$best.parameters$cost)
+```
+
+```{r}
+plot(tune.out)
+```
+The darker the region the lower the MSE, which means better the model. In our data MSE is lowest at epsilon - 0.1 and cost – 1. Here, we can see that there are bright regions and it means probably svm does not perform well in this case. Also, SVM algorithm is not suitable for large data sets. SVM does not perform very well when the data set has more noise and in our case, the number of data is rather high.
+
+```{r}
+weightcoef <- t(svrfit$coefs) %*% svrfit$SV
+weightcoef_abs <- abs(weightcoef)
+print(weightcoef_abs[order(weightcoef, decreasing = T)])
+orders <- order(weightcoef_abs, decreasing = T)
+plt.values <- rev(weightcoef_abs[orders])
+plt.names <- rev(names(weightcoef_abs[1,])[orders])
+plt.names <- factor(plt.names, levels = plt.names)
+
+importance_svr <- data.frame(name = plt.names, value = plt.values)
+ggplot(data = importance_svr, aes(x = name, y = value)) + coord_flip() + geom_bar(fill = "darkgreen", stat = "identity")
+
+# barplot(importance_svr$value ~ importance_svr$name, horiz = TRUE)
+```
+
+```{r}
+# Assuming you have the correct weight coefficients calculated and stored in the 'weightcoef' variable
+
+# Create a data frame with the variable names and weight coefficients
+weight_data <- data.frame(variable = colnames(wine[, -12]), weight = weightcoef)
+
+# Sort the weight data in decreasing order of weights
+sorted_weight_data <- weight_data[order(weight_data$weight, decreasing = TRUE), ]
+
+# Plot the weights
+ggplot(sorted_weight_data, aes(x = variable, y = weight)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  labs(x = "Variable", y = "Weight") +
+  ggtitle("Weight Coefficients for SVR Model") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+library(gridExtra)
+plot_alcohol <- partial(svrfit, pred.var = "volatile.acidity", plot = T)
+plot_acid <- partial(svrfit, pred.var = "alcohol", plot = T)
+plot_sugar <- partial(svrfit, pred.var = "density", plot = T)
+grid.arrange(plot_alcohol, plot_acid, plot_sugar, nrow = 1)
+```
+
+```{r}
+# Compute variable importance
+importance <- varImp(svrfit)
+
+# Plot relative importance
+plot(importance)
+```
+
+
+```{r}
+test_df <- wine[test.wine,]
+test_df_sc <- test_df
+for (i in 1:ncol(test_df)){
+  if (is.numeric(test_df[,i]))  {
+    test_df_sc[,i] <- (test_df[,i] - mean(train_df[,i]))/sd(train_df[,i])
+  }
+}
+preds <- predict(svrfit, newdata = test_df_sc)
+mse <- mean((test_df_sc[,12] - preds)^2)
+mse #MSE OF 0.7024
+
+TSS <- sum((test_df_sc[,12]-mean(test_df_sc[,12]))^2) 
+SSE_svr <- sum((test_df_sc[,12]-preds)^2)
+R2_svr <- (TSS-SSE_svr)/TSS #R2 of 0.3635
+```
+
+## LDA
+
+```{r}
+lda_model <- lda(quality ~ ., data = wine[train.wine,])
+
+lda_predictions <- predict(lda_model, newdata = wine[test.wine,])
+
+lda_predicted_labels <- lda_predictions$class
+
+lda_mse <- mean(lda_predicted_labels == wine[test.wine,]$quality)
+lda_mse
+```
+
+# Polynomial Regression
+
+```{r}
+poly_model <- lm(quality ~ poly(fixed.acidity, 2) + poly(volatile.acidity, 2) + poly(citric.acid, 2) + 
+                 poly(residual.sugar, 2) + poly(chlorides, 2) + poly(free.sulfur.dioxide, 2) + 
+                 poly(total.sulfur.dioxide, 2) + poly(density, 2) + poly(pH, 2) + poly(sulphates, 2) + 
+                 poly(alcohol, 2), data = wine[train.wine,])
+
+poly_predictions <- predict(poly_model, newdata = wine[test.wine,])
+
+poly_mse <- mean(round(poly_predictions) == wine[test.wine,]$quality)
+poly_mse
+```
