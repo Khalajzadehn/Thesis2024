@@ -8,6 +8,13 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+```{r}
+library(stringr)
+library(readr)
+library(dplyr)
+library(patchwork)
+library(ggplot2)
+```
 
 ```{r}
 FILES_DIRECTORY <- "./files_converted/"
@@ -56,8 +63,13 @@ dfauto_df$tmax <- as.numeric(dfauto_df$tmax)
 
 dfauto_df$duration <- dfauto_df$tmax - dfauto_df$tmin
 dfauto_df$ParticipantID <- gsub("(.*)_L[12]_Task[12]\\.wav", "\\1", dfauto_df$SoundfileID)
-dfauto_df$Language <- gsub(".*_(L[12])_Task[12]\\.wav", "\\1", dfauto_df$SoundfileID)
+dfauto_df$Language <- gsub(".*_(L[12])_Task[12]\\.wav", "\\1", dfauto_df$tw)
 dfauto_df$Task <- gsub(".*_L[12]_(Task[12])\\.wav", "\\1", dfauto_df$SoundfileID)
+dfauto_df$TransitionPoint <- dfauto_df$tmax
+dfauto_df <- dfauto_df %>%
+  group_by(ParticipantID, Language, Task) %>%
+  mutate(PauseDuration = ifelse(text == 1, duration, 0)) %>%
+  ungroup()
 
 print(dfauto_df)
 ```
@@ -103,7 +115,7 @@ dfauto_L1_Task1 <- dfauto_df[dfauto_df$Language == "L1" & dfauto_df$Task == "Tas
 dfauto_L1_Task1$ypos <- seq_along(dfauto_L1_Task1$tmin)
 
 plot_L1_Task1 <-  ggplot(dfauto_L1_Task1, aes(x = tmin, xend = tmax, y = SoundfileID, yend = SoundfileID)) +
-  geom_segment(aes(color = SoundfileID), size = 1) +
+  geom_segment(aes(color = SoundfileID), linewidth = 1) +
   theme_minimal() +
   labs(title = "Pauses in Soundtracks",
        x = "Time (seconds)",
@@ -150,8 +162,6 @@ plot_L2_Task2 <- ggplot(dfauto_L2_Task2, aes(x = tmin, xend = tmax, y = Soundfil
 ```
 
 ```{r}
-library(patchwork)
-
 plot_L1_Task2 <- plot_L1_Task2 + theme(legend.position = "none")
 plot_L2_Task2 <- plot_L2_Task2 + theme(legend.position = "none")
 
@@ -163,8 +173,6 @@ combined_plot_layout
 ```
 
 ```{r}
-library(stringr)
-
 participant_plots <- lapply(unique(phrases_df$ParticipantID), function(participant) {
   participant_df <- phrases_df %>% filter(ParticipantID == participant)
   
@@ -754,8 +762,6 @@ rf_transition <- randomForest(TransitionPoint ~ duration, data = train_data)
 rf_duration <- randomForest(PauseDuration ~ duration, data = train_data)
 
 ```
-
-
 
 
 
