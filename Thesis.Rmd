@@ -14,6 +14,7 @@ library(readr)
 library(dplyr)
 library(patchwork)
 library(ggplot2)
+library(caret)
 ```
 
 ```{r}
@@ -63,7 +64,7 @@ dfauto_df$tmax <- as.numeric(dfauto_df$tmax)
 
 dfauto_df$duration <- dfauto_df$tmax - dfauto_df$tmin
 dfauto_df$ParticipantID <- gsub("(.*)_L[12]_Task[12]\\.wav", "\\1", dfauto_df$SoundfileID)
-dfauto_df$Language <- gsub(".*_(L[12])_Task[12]\\.wav", "\\1", dfauto_df$tw)
+dfauto_df$Language <- gsub(".*_(L[12])_Task[12]\\.wav", "\\1", dfauto_df$SoundfileID)
 dfauto_df$Task <- gsub(".*_L[12]_(Task[12])\\.wav", "\\1", dfauto_df$SoundfileID)
 dfauto_df$TransitionPoint <- dfauto_df$tmax
 dfauto_df <- dfauto_df %>%
@@ -746,7 +747,7 @@ ggplot(combined_data, aes(x = interval, y = FilledPauses, color = interaction(La
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
 ```
-# Predicting transition point and length of silent pauses
+### Predicting transition point and length of silent pauses
 ```{r}
 
 participant_data <- phrases_df[phrases_df$ParticipantID == SELECTED_PARTICIPANT_ID & phrases_df$Language == 'L1' & phrases_df$Task == 'Task1', ]
@@ -765,3 +766,248 @@ rf_duration <- randomForest(PauseDuration ~ duration, data = train_data)
 
 
 
+# Prediction of the length of the next pause
+
+## Preparing dataframe for each participant
+
+We are going to prepare the dataframe to use for training a model in order to predict the length of the next pause. We won't be focusing on the type of the next pause but only if there is a pause and the length of it. For further research we can also focus on predicting the type of the next pause.
+
+For this training we will be using the length of the pause as the response variable and use meaningful features extracted from the previous time periods in each sound track (participant/language/task). Let's define our features as X1, X2, X3, X4.
+
+- X1: How long ago was the last pause (seconds)
+- X2: Length of the previous pause (seconds - duration)
+- X3: Number of syllables since last pause (number)
+- X4: Number of pauses in the last 5 seconds
+
+We can also add (X5, X6, ..) similar to X4 and by extending the time window (5s, 10s, 20s, etc.)
+
+| Y   | t  | X1 | X2 | X3 | X4 | X5 |
+|-----|----|----|----|----|----|----|
+| 1.5 | 1  | 1  | 1  | 1  | 1  | 1  |
+| ..  | .. | .. | .. | .. | .. | .. |
+
+
+### Prepare global "Pauses" dataframe
+```{r}
+dfauto_pauses <- dfauto_df[dfauto_df$text == 1,] %>%
+  mutate(PauseType = "Filled")
+phrases_pauses <- phrases_df[phrases_df$text == 1,] %>%
+  mutate(PauseType = "Silent")
+
+dfauto_phrases <- dfauto_df[dfauto_df$text == 0,] %>%
+  mutate(PhraseType = "Filled")
+phrases_phrases <- phrases_df[phrases_df$text == 0,] %>%
+  mutate(PhraseType = "Silent")
+
+pauses <- rbind(dfauto_pauses, phrases_pauses)
+phrases <- rbind(dfauto_phrases, phrases_phrases)
+```
+
+### Prepare X1 (How long ago was the last pause?)
+### Prepare X2 (Length of the previous pause)
+### Prepare X3 (Number of syllables since last pause)
+### Prepare X4 (Number of pauses in the last 5 seconds)
+```{r}
+all_participants <- sort(unique(c(pauses$ParticipantID)))
+# all_participants <- c(SELECTED_PARTICIPANT_ID)
+  
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+X1_last_pause = c()
+X2_last_pause_length = c()
+X3_syllables_since_last_pause = c()
+X4_num_pauses_5_sec = c()
+X5_num_pauses_10_sec = c()
+X6_num_pauses_15_sec = c()
+X10_num_phrases_5_sec = c()
+X11_num_phrases_10_sec = c()
+X12_num_phrases_15_sec = c()
+
+for (participant in all_participants) {
+  for (language in languages) {
+    for (task in tasks) {
+      track_pauses <- pauses %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_pauses <- track_pauses[order(track_pauses$tmin),]
+      
+      track_phrases <- phrases %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_phrases <- track_phrases[order(track_phrases$tmin),]
+
+      track_nuclei <- nuclei_df %>% filter(ParticipantID == participant, Task == task, Language == language)
+
+      if (nrow(track_pauses) == 0) next
+
+      for (row in 1:nrow(track_pauses)) {
+        if (row == 1) {
+          X1_last_pause = append(X1_last_pause, 0)
+          X2_last_pause_length = append(X2_last_pause_length, 0)
+          X3_syllables_since_last_pause = append(X3_syllables_since_last_pause, 0)
+          X4_num_pauses_5_sec = append(X4_num_pauses_5_sec, 0)
+          X5_num_pauses_10_sec = append(X5_num_pauses_10_sec, 0)
+          X6_num_pauses_15_sec = append(X6_num_pauses_15_sec, 0)
+          X10_num_phrases_5_sec = append(X10_num_phrases_5_sec, 0)
+          X11_num_phrases_10_sec = append(X11_num_phrases_10_sec, 0)
+          X12_num_phrases_15_sec = append(X12_num_phrases_15_sec, 0)
+          next
+        }
+
+        X1_last_pause = append(X1_last_pause, track_pauses[row,]$tmin - track_pauses[row - 1,]$tmin)
+        X2_last_pause_length = append(X2_last_pause_length, track_pauses[row - 1,]$duration)
+        
+        syllables_between <- track_nuclei %>% filter(tmin > track_pauses[row - 1,]$tmin, tmin < track_pauses[row,]$tmin)
+        X3_syllables_since_last_pause = append(X3_syllables_since_last_pause, nrow(syllables_between))
+        
+        pauses_in_5_sec <- track_pauses %>% filter(tmin > track_pauses[row,]$tmin - 5, tmin < track_pauses[row,]$tmin)
+        X4_num_pauses_5_sec = append(X4_num_pauses_5_sec, nrow(pauses_in_5_sec))
+        
+        pauses_in_10_sec <- track_pauses %>% filter(tmin > track_pauses[row,]$tmin - 10, tmin < track_pauses[row,]$tmin)
+        X5_num_pauses_10_sec = append(X5_num_pauses_10_sec, nrow(pauses_in_10_sec))
+        
+        pauses_in_15_sec <- track_pauses %>% filter(tmin > track_pauses[row,]$tmin - 15, tmin < track_pauses[row,]$tmin)
+        X6_num_pauses_15_sec = append(X6_num_pauses_15_sec, nrow(pauses_in_15_sec))
+        
+        phrasess_in_5_sec <- track_phrases %>% filter(tmin > track_phrases[row,]$tmin - 5, tmin < track_phrases[row,]$tmin)
+        X10_num_phrases_5_sec = append(X10_num_phrases_5_sec, nrow(phrasess_in_5_sec))
+        
+        phrasess_in_10_sec <- track_phrases %>% filter(tmin > track_phrases[row,]$tmin - 10, tmin < track_phrases[row,]$tmin)
+        X11_num_phrases_10_sec = append(X11_num_phrases_10_sec, nrow(phrasess_in_10_sec))
+        
+        phrasess_in_15_sec <- track_pauses %>% filter(tmin > track_pauses[row,]$tmin - 15, tmin < track_pauses[row,]$tmin)
+        X12_num_phrases_15_sec = append(X12_num_phrases_15_sec, nrow(phrasess_in_15_sec))
+      }
+    }
+  }
+}
+
+pauses$X1_last_pause <- X1_last_pause
+pauses$X2_last_pause_length <- X2_last_pause_length
+pauses$X3_syllables_since_last_pause <- X3_syllables_since_last_pause
+pauses$X4_num_pauses_5_sec <- X4_num_pauses_5_sec
+pauses$X5_num_pauses_10_sec <- X5_num_pauses_10_sec
+pauses$X6_num_pauses_15_sec <- X6_num_pauses_15_sec
+pauses$X10_num_phrases_5_sec <- X10_num_phrases_5_sec
+pauses$X11_num_phrases_10_sec <- X11_num_phrases_10_sec
+pauses$X12_num_phrases_15_sec <- X12_num_phrases_15_sec
+```
+
+Before we start training our model, it's important to talk about our response variable. Currently we have developed the "PauseDuration" column which is representing the pause duration for each pause. Since our goal is to predict the "Next Pause duration", we need to adjust the "PauseDuration" column to be representing the "next pause duration" for every record. In order to do that we need to shift the column up by 1 row.
+
+```{r}
+# Assuming 'pauses' is your DataFrame
+pauses <- pauses %>%
+  arrange(ParticipantID, Task, tmin) %>%
+  mutate(NextPauseDuration = lead(PauseDuration))
+
+# Remove the last row for each group since it won't have a 'next_pause_length'
+pauses <- pauses %>%
+  group_by(ParticipantID, Task) %>%
+  slice(-n())
+```
+
+## Using RandomForest Regression to create a model
+
+Include explanation about why it's okay to use all the data for all sound tracks put together and there is no need to train multiple models.
+
+Include text about investigations regarding the Homogeneity Across Sound Tracks, Inter-Track Variability
+
+Include information about investigating the effect of "Language", "Task" parameters and how they didn't seem to be relevant and not important
+
+```{r}
+library(randomForest)
+
+set.seed(123) # for reproducibility
+train_indices <- sample(1:nrow(pauses), size = 0.8*nrow(pauses)) # 80% for training
+train_data <- pauses[train_indices, ]
+test_data <- pauses[-train_indices, ]
+
+rf_model <- randomForest(
+              NextPauseDuration ~
+                X1_last_pause +
+                X2_last_pause_length +
+                X3_syllables_since_last_pause +
+                X4_num_pauses_5_sec +
+                X5_num_pauses_10_sec +
+                X6_num_pauses_15_sec +
+                X10_num_phrases_5_sec +
+                X11_num_phrases_10_sec +
+                X12_num_phrases_15_sec
+            , data = train_data)
+
+predictions <- predict(rf_model, newdata = test_data)
+
+# Calculate MSE
+mse <- mean((predictions - test_data$NextPauseDuration)^2)
+print(paste("Test MSE:", mse))
+
+# Calculate RMSE
+rmse <- sqrt(mse)
+print(paste("Test RMSE:", rmse))
+
+# Calculate MAE
+mae <- mean(abs(predictions - test_data$NextPauseDuration))
+print(paste("Test MAE:", mae))
+
+# Calculate MAPE (Mean Absolute Percentage Error)
+# Note: Ensure that test_data$NextPauseDuration does not contain zeros to avoid division by zero
+mape <- mean(abs((predictions - test_data$NextPauseDuration) / test_data$NextPauseDuration)) * 100
+print(paste("Test MAPE:", mape, "%"))
+```
+```{r}
+# 1. Scatter Plot of Actual vs. Predicted Values
+
+results <- data.frame(Actual = test_data$NextPauseDuration, Predicted = predictions)
+
+ggplot(results, aes(x = Actual, y = Predicted)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+  labs(title = "Actual vs Predicted NextPauseDuration",
+       x = "Actual Duration",
+       y = "Predicted Duration") +
+  theme_minimal()
+
+# 2. Feature Importance Plot
+
+importance <- randomForest::importance(rf_model)
+featureImportance <- data.frame(Feature = rownames(importance), Importance = importance[, 'IncNodePurity'])
+
+ggplot(featureImportance, aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Feature Importance in Predicting NextPauseDuration",
+       x = "Feature",
+       y = "Increase in MSE if Feature is Excluded") +
+  theme_minimal()
+
+# 3. Residuals Plot
+results$Residuals <- results$Actual - results$Predicted
+
+ggplot(results, aes(x = Predicted, y = Residuals)) +
+  geom_point(alpha = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Residuals of Predictions",
+       x = "Predicted Duration",
+       y = "Residuals") +
+  theme_minimal()
+
+```
+
+Include text about how 10 sec is a better time window for num_pauses than 5 seconds.
+
+Include text about how ARIMA is not suitable in our case:
+
+The applicability and performance of ARIMA depend significantly on the nature of your time series data, including its stationarity, seasonality, and the presence of trends. If your dataset is not a simple univariate time series, or if the pause durations are influenced by multiple factors (like the features you've created), you might need to explore multivariate time series models or stick with machine learning approaches that can handle multiple predictors.
+
+
+```{r}
+library(forecast)
+
+pauses_durations <- pauses %>% filter(ParticipantID == SELECTED_PARTICIPANT_ID, Language == "L1", Task == "Task1")
+
+pause_ts <- ts(pauses_durations$PauseDuration, frequency=1) # Adjust frequency as needed
+
+fit <- auto.arima(pause_ts)
+summary(fit)
+forecasts <- forecast(fit, h=5)
+print(forecasts)
+plot(forecasts)
+```
