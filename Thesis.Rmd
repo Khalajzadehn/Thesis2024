@@ -732,7 +732,7 @@ predicted_data <- predict_data %>%
 
 number_of_filled_pauses_data$Type <- "Observed"
 combined_data <- rbind(number_of_filled_pauses_data, predicted_data)
-
+;
 ggplot(combined_data, aes(x = interval, y = FilledPauses, color = interaction(Language, Task), group = 1)) +
   geom_line(aes(color = interaction(Language, Task))) +
   geom_point(data = subset(combined_data, Type == 'Observed'), aes(color = interaction(Language, Task))) +
@@ -801,6 +801,8 @@ phrases_phrases <- phrases_df[phrases_df$text == 0,] %>%
 
 pauses <- rbind(dfauto_pauses, phrases_pauses)
 phrases <- rbind(dfauto_phrases, phrases_phrases)
+
+pauses <- pauses[with(pauses, order(SoundfileID, tmin)),]
 ```
 
 ### Prepare X1 (How long ago was the last pause?)
@@ -888,6 +890,8 @@ pauses$X6_num_pauses_15_sec <- X6_num_pauses_15_sec
 pauses$X10_num_phrases_5_sec <- X10_num_phrases_5_sec
 pauses$X11_num_phrases_10_sec <- X11_num_phrases_10_sec
 pauses$X12_num_phrases_15_sec <- X12_num_phrases_15_sec
+
+pauses <- pauses[with(pauses, order(SoundfileID, tmin)),]
 ```
 
 Before we start training our model, it's important to talk about our response variable. Currently we have developed the "PauseDuration" column which is representing the pause duration for each pause. Since our goal is to predict the "Next Pause duration", we need to adjust the "PauseDuration" column to be representing the "next pause duration" for every record. In order to do that we need to shift the column up by 1 row.
@@ -927,10 +931,8 @@ rf_model <- randomForest(
                 X3_syllables_since_last_pause +
                 X4_num_pauses_5_sec +
                 X5_num_pauses_10_sec +
-                X6_num_pauses_15_sec +
                 X10_num_phrases_5_sec +
-                X11_num_phrases_10_sec +
-                X12_num_phrases_15_sec
+                X11_num_phrases_10_sec
             , data = train_data)
 
 predictions <- predict(rf_model, newdata = test_data)
@@ -991,7 +993,7 @@ ggplot(results, aes(x = Predicted, y = Residuals)) +
 
 ```
 
-Include text about how 10 sec is a better time window for num_pauses than 5 seconds.
+Include text about how 10 sec is a better time window for num_pauses than 5 seconds. also 15 seconds was too high and we had to remove it
 
 Include text about how ARIMA is not suitable in our case:
 
