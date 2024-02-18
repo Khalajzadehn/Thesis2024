@@ -1209,8 +1209,8 @@ for (participant in all_participants) {
       pauses_5secs$X4_num_phrases_10_sec <- X4_num_phrases_10_sec
       pauses_5secs$X5_last_5_sec_pause_duration <- X5_last_5_sec_pause_duration
       pauses_5secs$X6_sum_word_freq_5_sec <- X6_sum_word_freq_5_sec
-      
-      print(pauses_5secs)
+
+      ###################################### GAM ######################################
       # Fit a GAM model
       gam_model <- gam(TotalDuration ~
                          X1_num_pauses_5_sec +
@@ -1229,7 +1229,28 @@ for (participant in all_participants) {
       # Step 2: Make predictions on the existing dataset
       pauses_5secs$PredictedDuration <- predict(gam_model, newdata = pauses_5secs, type = "response")
       
+      ###################################### GAM + CV ######################################
+      gam_model_cv <- train(TotalDuration ~
+                         X1_num_pauses_5_sec +
+                         X2_num_pauses_10_sec +
+                         X3_num_phrases_5_sec +
+                         X4_num_phrases_10_sec +
+                         X5_last_5_sec_pause_duration +
+                         X6_sum_word_freq_5_sec, 
+                  data = pauses_5secs,
+                  method = "gam",
+                  trControl = trainControl(method = "cv", number = 10),
+                  tuneGrid = data.frame(method = "GCV.Cp", select = FALSE)
+      )
       
+      
+      # Use the trained model to make predictions
+      pauses_5secs$PredictedDurationGAM_CV <- predict(gam_model_cv, newdata = pauses_5secs)
+      
+      # Calculate evaluation metrics
+      print(postResample(pred = pauses_5secs$PredictedDurationGAM_CV, obs = pauses_5secs$TotalDuration))
+      
+      ###################################### Random Forest ######################################
       set.seed(123) # for reproducibility
       train_indices <- sample(1:nrow(pauses_5secs), size = 0.8*nrow(pauses_5secs))
       train_data <- pauses_5secs[train_indices, ]
@@ -1243,8 +1264,32 @@ for (participant in all_participants) {
                       X5_last_5_sec_pause_duration +
                       X6_sum_word_freq_5_sec
                   , data = train_data)
-
+      
       pauses_5secs$PredictedDurationRF <- predict(rf_model, newdata = pauses_5secs, type = "response")
+      
+      ###################################### Random Forest + CV ######################################
+      train_control <- trainControl(method = "cv", number = 10)
+      formula <- TotalDuration ~
+        X1_num_pauses_5_sec +
+        X2_num_pauses_10_sec +
+        X3_num_phrases_5_sec +
+        X4_num_phrases_10_sec +
+        X5_last_5_sec_pause_duration +
+        X6_sum_word_freq_5_sec
+      
+      # Train the model with cross-validation
+      rf_model_cv <- train(
+        formula,
+        data = pauses_5secs,
+        method = "rf",
+        trControl = train_control
+      )
+
+      # Use the trained model to make predictions
+      pauses_5secs$PredictedDurationRF_CV <- predict(rf_model_cv, newdata = pauses_5secs)
+      
+      # Calculate evaluation metrics
+      print(postResample(pred = pauses_5secs$PredictedDurationRF_CV, obs = pauses_5secs$TotalDuration))
       
       # Calculate MSE
       mse <- mean((pauses_5secs$PredictedDurationRF - pauses_5secs$TotalDuration)^2)
@@ -1262,9 +1307,11 @@ for (participant in all_participants) {
       plt <- ggplot(pauses_5secs, aes(x = as.factor(IntervalStart))) +
         geom_bar(aes(y = TotalDuration, fill = "Pause Duration"), stat = "identity", position = "dodge", color = "steelblue") +
         geom_line(aes(y = PredictedDuration, group = 1, color = "Pred - GAM"), size = 1) +
+        geom_line(aes(y = PredictedDurationGAM_CV, group = 1, color = "Pred - GAM + CV"), size = 1) +
         geom_line(aes(y = PredictedDurationRF, group = 1, color = "Pred - RF"), size = 1) +
+        geom_line(aes(y = PredictedDurationRF_CV, group = 1, color = "Pred - RF + CV"), size = 1) +
         scale_fill_manual(values = c("Pause Duration" = "steelblue")) +
-        scale_color_manual(values = c("Pred - GAM" = "black", "Pred - RF" = "red")) +
+        scale_color_manual(values = c("Pred - GAM" = "black", "Pred - GAM + CV" = "purple", "Pred - RF" = "red", "Pred - RF + CV" = "blue")) +
         theme_minimal() +
         labs(x = "Interval Start (s)", y = "Duration (s)", title = "Actual vs. Predicted Durations for Each Interval") +
         theme(axis.text.x = element_text(angle = 45, hjust = 1))
