@@ -1132,8 +1132,9 @@ for (participant in all_participants) {
 ```{r}
 library(mgcv)
 
-# all_participants <- sort(unique(c(pauses$ParticipantID)))
-all_participants <- c(SELECTED_PARTICIPANT_ID)
+all_participants <- sort(unique(c(pauses$ParticipantID)))
+# all_participants <- c("AMGOPP1")
+# all_participants <- c(SELECTED_PARTICIPANT_ID)
 
 languages <- c("L1", "L2")
 tasks <- c("Task1", "Task2")
@@ -1143,21 +1144,23 @@ for (participant in all_participants) {
     for (task in tasks) {
       track_pauses <- pauses %>% filter(ParticipantID == participant, Task == task, Language == language)
       track_pauses <- track_pauses[order(track_pauses$tmin),]
-      
+
       track_phrases <- phrases %>% filter(ParticipantID == participant, Task == task, Language == language, PhraseType == "Filled")
       track_phrases <- track_phrases[order(track_phrases$tmin),]
-      
+
       track_wordfreq <- wordfreq_df %>% filter(ParticipantID == participant, Task == task, Language == language)
       track_wordfreq <- track_wordfreq[order(track_wordfreq$tmin),]
- 
+
+      if (nrow(track_pauses) == 0 || nrow(track_phrases) == 0 || nrow(track_wordfreq) == 0) next
+      
       pauses_5secs <- track_pauses %>%
         mutate(IntervalStart = floor(tmin / 5) * 5) %>%
         group_by(IntervalStart) %>%
         summarise(
           TotalDuration = sum(duration),
-          
           Type = "Pauses"
         )
+
       
       X1_num_pauses_5_sec = c()
       X2_num_pauses_10_sec = c()
@@ -1209,6 +1212,8 @@ for (participant in all_participants) {
       pauses_5secs$X4_num_phrases_10_sec <- X4_num_phrases_10_sec
       pauses_5secs$X5_last_5_sec_pause_duration <- X5_last_5_sec_pause_duration
       pauses_5secs$X6_sum_word_freq_5_sec <- X6_sum_word_freq_5_sec
+      
+      pauses_5secs <- na.omit(pauses_5secs)
 
       ###################################### GAM ######################################
       # Fit a GAM model
@@ -1229,6 +1234,7 @@ for (participant in all_participants) {
       # Step 2: Make predictions on the existing dataset
       pauses_5secs$PredictedDuration <- predict(gam_model, newdata = pauses_5secs, type = "response")
       
+      
       ###################################### GAM + CV ######################################
       gam_model_cv <- train(TotalDuration ~
                          X1_num_pauses_5_sec +
@@ -1243,12 +1249,12 @@ for (participant in all_participants) {
                   tuneGrid = data.frame(method = "GCV.Cp", select = FALSE)
       )
       
-      
       # Use the trained model to make predictions
       pauses_5secs$PredictedDurationGAM_CV <- predict(gam_model_cv, newdata = pauses_5secs)
       
       # Calculate evaluation metrics
       print(postResample(pred = pauses_5secs$PredictedDurationGAM_CV, obs = pauses_5secs$TotalDuration))
+      
       
       ###################################### Random Forest ######################################
       set.seed(123) # for reproducibility
@@ -1313,7 +1319,7 @@ for (participant in all_participants) {
         scale_fill_manual(values = c("Pause Duration" = "steelblue")) +
         scale_color_manual(values = c("Pred - GAM" = "black", "Pred - GAM + CV" = "purple", "Pred - RF" = "red", "Pred - RF + CV" = "blue")) +
         theme_minimal() +
-        labs(x = "Interval Start (s)", y = "Duration (s)", title = "Actual vs. Predicted Durations for Each Interval") +
+        labs(x = "Interval Start (s)", y = "Duration (s)", title = paste("Actual vs. Predicted Durations for Each Interval - ", participant, task, language)) +
         theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
       print(plt)
