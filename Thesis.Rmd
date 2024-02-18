@@ -5,6 +5,57 @@ date: "2023-10-29"
 output: pdf_document
 ---
 
+
+```
+README PRAAT-output files
+
+All files with .merged.txt are created with the Software PRAAT, they are simple tables created from so-called TexGrids.
+
+Each files contains the data for one participant, performing one task, in either their L1 or L2.
+
+The first column is the soundfile-ID:
+AMGOPP1_L1_Task2.wav is the ID of the participant (AMGOPP1), the langueage (L1 or L2), and the task (Task1 or Task2).
+Task1 in L1 is not the exact same task as Task1 in L2, but a very similar task requiring similar linguistic and cognitive demands.
+
+The second column is "tmin": for duration-events, this is the start of the event; for point-events, the start and the end will be the same.
+
+The third column is "tier": the name of the variable. These are the variables related to fluency:
+Phrases: interval variable either 0 (speech) or 1 (silent pause)
+DFauto (English/Dutch): interval variable which is 1 for a filled pause, and 0 for speech
+Nuclei: point variable that is a number counting up, for each nucleus (middle) of a syllable throughout the sound file
+
+The following tiers are all interval-tiers, related to the words, as looked up in an external corpus:
+Lg10WF: Log frequency of occurrence in an external corpus (this is the best variable for lexical complexity)
+SUBTLEXWF: Fequency per million in external corpus
+CDcount: kind of freqency/count in external corpus
+FREQlemma: yet another, frequency of the lemma not the word in external corpus
+FREQlow: yet another frequency count
+SUBTLEXCD: yet another frequency count
+Lg10CD: log of a frequency count
+CDlow: yet another frequency count
+FREQcount: yet another frequency count
+POStags: part of speech tag
+
+The following two tiers are also interval-tiers, related to the words
+FreqDist: measure for frequency of occurrence within the soundfile itself
+Repetitions: measure for repetetiveness of the word until now. It ranges from 0 (word never uttered until now) to 1 (previous word was the same word)
+
+The fourth column is the value of the tier (called 'text')
+Phrases: 1 or 0
+DFauto: 1 or 0
+Nuclei: an absolute number
+Lg10WF etc: a number
+POStags: a code
+FreqDist: a number
+Repetitions: a number ranging from 0 to 1
+
+NOTE that sometimes PRAAT outputs "--undefined--" or "MISSING", which you can change to "NA"
+
+The fifth column is 'tmax', which is the same value of 'tmin' for the point tier "Nuclei", and which is the ending time of interval-tiers
+
+
+```
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -108,6 +159,23 @@ nuclei_df$Task <- gsub(".*_L[12]_(Task[12])\\.wav", "\\1", nuclei_df$SoundfileID
 
 print(nuclei_df)
 ```
+
+
+## Prepare "wordfreq_df" data frame
+```{r}
+wordfreq_df <- df[startsWith(df$tier, "Lg10WF"),]
+wordfreq_df <- wordfreq_df[!is.na(wordfreq_df$text), ]
+
+wordfreq_df$tmin <- as.numeric(wordfreq_df$tmin)
+wordfreq_df$tmax <- as.numeric(wordfreq_df$tmax)
+
+wordfreq_df$ParticipantID <- str_extract(wordfreq_df$SoundfileID, "^[A-Z]+\\d+")
+wordfreq_df$Language <- ifelse(str_detect(wordfreq_df$SoundfileID, "_L1_"), "L1", "L2")
+wordfreq_df$Task <- ifelse(str_detect(wordfreq_df$SoundfileID, "_Task1"), "Task1", "Task2")
+
+print(wordfreq_df)
+```
+
 
 
 ```{r}
@@ -732,7 +800,6 @@ predicted_data <- predict_data %>%
 
 number_of_filled_pauses_data$Type <- "Observed"
 combined_data <- rbind(number_of_filled_pauses_data, predicted_data)
-;
 ggplot(combined_data, aes(x = interval, y = FilledPauses, color = interaction(Language, Task), group = 1)) +
   geom_line(aes(color = interaction(Language, Task))) +
   geom_point(data = subset(combined_data, Type == 'Observed'), aes(color = interaction(Language, Task))) +
@@ -916,6 +983,9 @@ Include text about investigations regarding the Homogeneity Across Sound Tracks,
 
 Include information about investigating the effect of "Language", "Task" parameters and how they didn't seem to be relevant and not important
 
+- addition => change the model to be trained and checked against each soundtrack
+- 
+
 ```{r}
 library(randomForest)
 
@@ -1012,4 +1082,211 @@ summary(fit)
 forecasts <- forecast(fit, h=5)
 print(forecasts)
 plot(forecasts)
+```
+
+
+
+## Some new visualizations
+
+```{r}
+
+all_participants <- sort(unique(c(pauses$ParticipantID)))
+# all_participants <- c(SELECTED_PARTICIPANT_ID)
+
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+for (participant in all_participants) {
+  for (language in languages) {
+    for (task in tasks) {
+      track_pauses <- pauses %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_pauses <- track_pauses[order(track_pauses$tmin),]
+      
+      track_phrases <- phrases %>% filter(ParticipantID == participant, Task == task, Language == language, PhraseType == "Filled")
+      track_phrases <- track_phrases[order(track_phrases$tmin),]
+ 
+      phrases_5secs <- track_phrases %>%
+        mutate(IntervalStart = floor(tmin / 5) * 5) %>%
+        group_by(IntervalStart) %>%
+        summarise(TotalDuration = sum(duration), Type = "Phrases")
+
+      pauses_5secs <- track_pauses %>%
+        mutate(IntervalStart = floor(tmin / 5) * 5) %>%
+        group_by(IntervalStart) %>%
+        summarise(TotalDuration = sum(duration), Type = "Pauses")
+      
+      track_combined <- rbind(phrases_5secs, pauses_5secs)
+      plt <- ggplot(track_combined, aes(x = as.factor(IntervalStart), y = TotalDuration, fill = Type)) +
+        geom_bar(stat = "identity", position = "stack") +
+        scale_fill_manual(values = c("Phrases" = "steelblue", "Pauses" = "salmon")) +
+        theme_minimal() +
+        labs(x = "Interval Start (s)", y = "Total Duration (s)", title = "Sum of Durations for Every 5-Second Interval") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+      print(plt)
+    }
+  }
+}
+```
+
+```{r}
+library(mgcv)
+
+# all_participants <- sort(unique(c(pauses$ParticipantID)))
+all_participants <- c(SELECTED_PARTICIPANT_ID)
+
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+for (participant in all_participants) {
+  for (language in languages) {
+    for (task in tasks) {
+      track_pauses <- pauses %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_pauses <- track_pauses[order(track_pauses$tmin),]
+      
+      track_phrases <- phrases %>% filter(ParticipantID == participant, Task == task, Language == language, PhraseType == "Filled")
+      track_phrases <- track_phrases[order(track_phrases$tmin),]
+      
+      track_wordfreq <- wordfreq_df %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_wordfreq <- track_wordfreq[order(track_wordfreq$tmin),]
+ 
+      pauses_5secs <- track_pauses %>%
+        mutate(IntervalStart = floor(tmin / 5) * 5) %>%
+        group_by(IntervalStart) %>%
+        summarise(
+          TotalDuration = sum(duration),
+          
+          Type = "Pauses"
+        )
+      
+      X1_num_pauses_5_sec = c()
+      X2_num_pauses_10_sec = c()
+      X3_num_phrases_5_sec = c()
+      X4_num_phrases_10_sec = c()
+      X5_last_5_sec_pause_duration = c()
+      X6_sum_word_freq_5_sec = c()
+      
+      for (row in 1:nrow(pauses_5secs)) {
+        if (row == 1) {
+          X1_num_pauses_5_sec = append(X1_num_pauses_5_sec, 0)
+          X2_num_pauses_10_sec = append(X2_num_pauses_10_sec, 0)
+          X3_num_phrases_5_sec = append(X3_num_phrases_5_sec, 0)
+          X4_num_phrases_10_sec = append(X4_num_phrases_10_sec, 0)
+          X5_last_5_sec_pause_duration = append(X5_last_5_sec_pause_duration, 0)
+          X6_sum_word_freq_5_sec = append(X6_sum_word_freq_5_sec, 0)
+          next
+        }
+        
+        row_tmin <- pauses_5secs[row,]$IntervalStart
+
+        X1_last_pause = append(X1_last_pause, track_pauses[row,]$tmin - track_pauses[row - 1,]$tmin)
+        X2_last_pause_length = append(X2_last_pause_length, track_pauses[row - 1,]$duration)
+        
+        syllables_between <- track_nuclei %>% filter(tmin > track_pauses[row - 1,]$tmin, tmin < track_pauses[row,]$tmin)
+        X3_syllables_since_last_pause = append(X3_syllables_since_last_pause, nrow(syllables_between))
+        
+        pauses_in_5_sec <- track_pauses %>% filter(tmin > row_tmin - 5, tmin < row_tmin)
+        X1_num_pauses_5_sec = append(X1_num_pauses_5_sec, nrow(pauses_in_5_sec))
+
+        pauses_in_10_sec <- track_pauses %>% filter(tmin > row_tmin - 10, tmin < row_tmin)
+        X2_num_pauses_10_sec = append(X2_num_pauses_10_sec, nrow(pauses_in_10_sec))
+        
+        phrasess_in_5_sec <- track_phrases %>% filter(tmin > row_tmin - 5, tmin < row_tmin)
+        X3_num_phrases_5_sec = append(X3_num_phrases_5_sec, nrow(phrasess_in_5_sec))
+        
+        phrasess_in_10_sec <- track_phrases %>% filter(tmin > row_tmin - 10, tmin < row_tmin)
+        X4_num_phrases_10_sec = append(X4_num_phrases_10_sec, nrow(phrasess_in_10_sec))
+        
+        X5_last_5_sec_pause_duration = append(X5_last_5_sec_pause_duration, pauses_5secs[row - 1,]$TotalDuration)
+        
+        wordfreq_in_5_sec <- track_wordfreq %>% filter(tmin > row_tmin - 5, tmin < row_tmin)
+        X6_sum_word_freq_5_sec = append(X6_sum_word_freq_5_sec, mean(as.numeric(wordfreq_in_5_sec$text)))
+      }
+      
+      pauses_5secs$X1_num_pauses_5_sec <- X1_num_pauses_5_sec
+      pauses_5secs$X2_num_pauses_10_sec <- X2_num_pauses_10_sec
+      pauses_5secs$X3_num_phrases_5_sec <- X3_num_phrases_5_sec
+      pauses_5secs$X4_num_phrases_10_sec <- X4_num_phrases_10_sec
+      pauses_5secs$X5_last_5_sec_pause_duration <- X5_last_5_sec_pause_duration
+      pauses_5secs$X6_sum_word_freq_5_sec <- X6_sum_word_freq_5_sec
+      
+      print(pauses_5secs)
+      # Fit a GAM model
+      gam_model <- gam(TotalDuration ~
+                         X1_num_pauses_5_sec +
+                         X2_num_pauses_10_sec +
+                         X3_num_phrases_5_sec +
+                         X4_num_phrases_10_sec +
+                         X5_last_5_sec_pause_duration +
+                         X6_sum_word_freq_5_sec
+                         # s(X1_num_pauses_5_sec, k = 4, bs='ps', sp = 0.6) +
+                         # s(X2_num_pauses_10_sec, k = 4, bs='ps', sp = 0.6) +
+                         # s(X3_num_phrases_5_sec, k = 4, bs='ps', sp = 0.6),
+                         # s(X4_num_phrases_10_sec, k = 4),
+                         # s(X5_last_5_sec_pause_duration, sp=0.6, k = 4),
+                      , data = pauses_5secs, family = gaussian(link = "log"))
+
+      # Step 2: Make predictions on the existing dataset
+      pauses_5secs$PredictedDuration <- predict(gam_model, newdata = pauses_5secs, type = "response")
+      
+      
+      set.seed(123) # for reproducibility
+      train_indices <- sample(1:nrow(pauses_5secs), size = 0.8*nrow(pauses_5secs))
+      train_data <- pauses_5secs[train_indices, ]
+      test_data <- pauses_5secs[-train_indices, ]
+      rf_model <- randomForest(
+                    TotalDuration ~
+                      X1_num_pauses_5_sec +
+                      X2_num_pauses_10_sec +
+                      X3_num_phrases_5_sec +
+                      X4_num_phrases_10_sec +
+                      X5_last_5_sec_pause_duration +
+                      X6_sum_word_freq_5_sec
+                  , data = train_data)
+
+      pauses_5secs$PredictedDurationRF <- predict(rf_model, newdata = pauses_5secs, type = "response")
+      
+      # Calculate MSE
+      mse <- mean((pauses_5secs$PredictedDurationRF - pauses_5secs$TotalDuration)^2)
+      print(paste(participant, language, task, "Test MSE:", mse))
+      
+      # Calculate RMSE
+      rmse <- sqrt(mse)
+      print(paste(participant, language, task, "Test RMSE:", rmse))
+      
+      # Calculate MAE
+      mae <- mean(abs(pauses_5secs$PredictedDurationRF - pauses_5secs$TotalDuration))
+      print(paste(participant, language, task, "Test MAE:", mae))
+
+      # Step 3: Visualize Actual vs. Predicted Durations
+      plt <- ggplot(pauses_5secs, aes(x = as.factor(IntervalStart))) +
+        geom_bar(aes(y = TotalDuration, fill = "Pause Duration"), stat = "identity", position = "dodge", color = "steelblue") +
+        geom_line(aes(y = PredictedDuration, group = 1, color = "Pred - GAM"), size = 1) +
+        geom_line(aes(y = PredictedDurationRF, group = 1, color = "Pred - RF"), size = 1) +
+        scale_fill_manual(values = c("Pause Duration" = "steelblue")) +
+        scale_color_manual(values = c("Pred - GAM" = "black", "Pred - RF" = "red")) +
+        theme_minimal() +
+        labs(x = "Interval Start (s)", y = "Duration (s)", title = "Actual vs. Predicted Durations for Each Interval") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+      print(plt)
+# 
+#       # Prepare data for prediction
+#       prediction_data <- data.frame(IntervalStart = seq(min(pauses_5secs$IntervalStart), max(pauses_5secs$IntervalStart), by = 1))
+#       prediction_data$X5_last_5_sec_pause_duration <- mean(pauses_5secs$X5_last_5_sec_pause_duration)
+#       prediction_data$PredictedDuration <- predict(gam_model, newdata = prediction_data, type = "response")
+# 
+#       plt <- ggplot(pauses_5secs, aes(x = as.factor(IntervalStart), y = TotalDuration)) +
+#         geom_bar(stat = "identity", position = "stack", color = "steelblue") +
+#         geom_line(data = prediction_data, aes(x = as.factor(IntervalStart), y = PredictedDuration, group = 1), color = "black") +
+#         theme_minimal() +
+#         labs(x = "Interval Start (s)", y = "Total Duration (s)", title = "Sum of Durations for Every 5-Second Interval") +
+#         theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# 
+#       print(plt)
+      
+      
+    }
+  }
+}
 ```
