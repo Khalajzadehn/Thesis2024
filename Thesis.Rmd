@@ -870,6 +870,7 @@ pauses <- rbind(dfauto_pauses, phrases_pauses)
 phrases <- rbind(dfauto_phrases, phrases_phrases)
 
 pauses <- pauses[with(pauses, order(SoundfileID, tmin)),]
+phrases <- phrases[with(phrases, order(SoundfileID, tmin)),]
 ```
 
 ### Prepare X1 (How long ago was the last pause?)
@@ -1282,7 +1283,7 @@ for (participant in all_participants) {
         X4_num_phrases_10_sec +
         X5_last_5_sec_pause_duration +
         X6_sum_word_freq_5_sec
-      
+
       # Train the model with cross-validation
       rf_model_cv <- train(
         formula,
@@ -1342,4 +1343,137 @@ for (participant in all_participants) {
     }
   }
 }
+```
+
+
+
+
+
+
+
+
+
+
+
+#######
+
+
+```{r}
+all_participants <- sort(unique(c(pauses$ParticipantID)))
+# all_participants <- c(SELECTED_PARTICIPANT_ID)
+  
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+X1_prev_pause_duration = c()
+X2_prev_speech_duration = c()
+X3_prev_speech_complexity = c()
+X4_prev_speech_syllables = c()
+X5_prev_pause_type = c()
+
+for (participant in all_participants) {
+  for (language in languages) {
+    for (task in tasks) {
+      track_pauses <- pauses %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_pauses <- track_pauses[order(track_pauses$tmin),]
+      
+      track_phrases <- phrases %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_phrases <- track_phrases[order(track_phrases$tmin),]
+
+      track_nuclei <- nuclei_df %>% filter(ParticipantID == participant, Task == task, Language == language)
+      
+      track_wordfreq <- wordfreq_df %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_wordfreq <- track_wordfreq[order(track_wordfreq$tmin),]
+
+      if (nrow(track_pauses) == 0 || nrow(track_phrases) == 0 || nrow(track_wordfreq) == 0) next
+
+      for (row in 1:nrow(track_pauses)) {
+        if (row == 1) {
+          X1_prev_pause_duration = append(X1_prev_pause_duration, 0)
+          X2_prev_speech_duration = append(X2_prev_speech_duration, 0)
+          X3_prev_speech_complexity = append(X3_prev_speech_complexity, 0)
+          X4_prev_speech_syllables = append(X4_prev_speech_syllables, 0)
+          X5_prev_pause_type = append(X5_prev_pause_type, "Silent")
+          next
+        }
+
+        X1_prev_pause_duration = append(X1_prev_pause_duration, track_pauses[row - 1,]$duration)
+        X2_prev_speech_duration = append(X2_prev_speech_duration, track_pauses[row,]$tmin - track_pauses[row - 1,]$tmin)
+        
+        wordfreq_between <- track_wordfreq %>% filter(tmin > track_pauses[row - 1,]$tmin, tmin < track_pauses[row,]$tmin)
+        X3_prev_speech_complexity = append(X3_prev_speech_complexity, mean(as.numeric(wordfreq_between$text)))
+
+        syllables_between <- track_nuclei %>% filter(tmin > track_pauses[row - 1,]$tmin, tmin < track_pauses[row,]$tmin)
+        X4_prev_speech_syllables = append(X4_prev_speech_syllables, nrow(syllables_between))
+
+        X5_prev_pause_type = append(X5_prev_pause_type, track_pauses[row - 1,]$PauseType)
+      }
+    }
+  }
+}
+
+pauses$X1_prev_pause_duration <- as.numeric(X1_prev_pause_duration)
+pauses$X2_prev_speech_duration <- as.numeric(X2_prev_speech_duration)
+pauses$X3_prev_speech_complexity <- as.numeric(X3_prev_speech_complexity %>% replace(is.na(.), 0))
+pauses$X4_prev_speech_syllables <- as.numeric(X4_prev_speech_syllables)
+pauses$X5_prev_pause_type <- as.factor(X5_prev_pause_type)
+
+pauses <- pauses[with(pauses, order(SoundfileID, tmin)),]
+pauses <- na.omit(pauses)
+```
+
+
+```{r}
+# Load necessary package
+library(mgcv)
+
+# Sample GAM model fitting, ignoring random effects
+gam_model <- gam(PauseDuration ~ s(X1_prev_pause_duration) + 
+                                   s(X2_prev_speech_duration) + 
+                                   s(X3_prev_speech_complexity) + 
+                                   s(X4_prev_speech_syllables) + 
+                                   factor(X5_prev_pause_type) +
+                                   PauseType +
+                                   Task
+                 , data = pauses)
+
+# Summary of the model
+summary(gam_model)
+
+# Plotting the smooth terms to understand their effects
+plot(gam_model)
+
+```
+
+```{r}
+# Sample GAMM model fitting with crossed random effects
+gamm_model <- bam(PauseDuration ~ s(X1_prev_pause_duration) + 
+                                    s(X2_prev_speech_duration) + 
+                                    s(X3_prev_speech_complexity) + 
+                                    s(X4_prev_speech_syllables) +
+                                    factor(X5_prev_pause_type) +
+                                    PauseType +
+                                    Task
+                  ,random = ~(1|ParticipantID) + (1|Language),data = pauses,
+                  discrete = TRUE) # 'discrete = TRUE' can speed up large models
+
+# Summary of the model
+summary(gamm_model)
+
+
+# Assuming 'data' is your dataset and 'gamm_model' is your fitted model
+predicted_values <- predict(gamm_model$gam, newdata = data)
+actual_values <- data$PauseDuration
+
+# Plotting actual vs. predicted pause durations for a specific SoundfileID
+specific_soundtrack <- "YourSoundTrackIDHere"
+subset_data <- data[data$SoundfileID == specific_soundtrack, ]
+
+# Plot
+plot(subset_data$t, actual_values[type == specific_soundtrack], 
+     xlab = "Time", ylab = "Pause Duration", type = "l", col = "blue", 
+     main = paste("Actual vs. Predicted Pause Durations for", specific_soundtrack))
+lines(subset_data$t, predicted_values[type == specific_soundtrack], col = "red")
+legend("topright", legend = c("Actual", "Predicted"), col = c("blue", "red"), lty = 1)
+
 ```
