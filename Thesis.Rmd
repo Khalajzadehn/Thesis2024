@@ -1232,33 +1232,30 @@ for (participant in all_participants) {
                          # s(X5_last_5_sec_pause_duration, sp=0.6, k = 4),
                       , data = pauses_5secs, family = gaussian(link = "log"))
 
-      # Step 2: Make predictions on the existing dataset
       pauses_5secs$PredictedDuration <- predict(gam_model, newdata = pauses_5secs, type = "response")
       
       
       ###################################### GAM + CV ######################################
-      gam_model_cv <- train(TotalDuration ~
-                         X1_num_pauses_5_sec +
-                         X2_num_pauses_10_sec +
-                         X3_num_phrases_5_sec +
-                         X4_num_phrases_10_sec +
-                         X5_last_5_sec_pause_duration +
-                         X6_sum_word_freq_5_sec, 
-                  data = pauses_5secs,
-                  method = "gam",
-                  trControl = trainControl(method = "cv", number = 10),
-                  tuneGrid = data.frame(method = "GCV.Cp", select = FALSE)
-      )
-      
-      # Use the trained model to make predictions
-      pauses_5secs$PredictedDurationGAM_CV <- predict(gam_model_cv, newdata = pauses_5secs)
-      
-      # Calculate evaluation metrics
-      print(postResample(pred = pauses_5secs$PredictedDurationGAM_CV, obs = pauses_5secs$TotalDuration))
-      
+#      gam_model_cv <- train(TotalDuration ~
+#                         X1_num_pauses_5_sec +
+#                         X2_num_pauses_10_sec +
+#                         X3_num_phrases_5_sec +
+#                         X4_num_phrases_10_sec +
+#                         X5_last_5_sec_pause_duration +
+#                         X6_sum_word_freq_5_sec, 
+#                  data = pauses_5secs,
+#                  method = "gam",
+#                  trControl = trainControl(method = "cv", number = 10),
+#                  tuneGrid = data.frame(method = "GCV.Cp", select = FALSE)
+#      )
+#      
+#      pauses_5secs$PredictedDurationGAM_CV <- predict(gam_model_cv, newdata = pauses_5secs)
+#      
+#      print(postResample(pred = pauses_5secs$PredictedDurationGAM_CV, obs = pauses_5secs$TotalDuration))
+#      
       
       ###################################### Random Forest ######################################
-      set.seed(123) # for reproducibility
+      set.seed(123) 
       train_indices <- sample(1:nrow(pauses_5secs), size = 0.8*nrow(pauses_5secs))
       train_data <- pauses_5secs[train_indices, ]
       test_data <- pauses_5secs[-train_indices, ]
@@ -1284,7 +1281,6 @@ for (participant in all_participants) {
         X5_last_5_sec_pause_duration +
         X6_sum_word_freq_5_sec
 
-      # Train the model with cross-validation
       rf_model_cv <- train(
         formula,
         data = pauses_5secs,
@@ -1292,29 +1288,23 @@ for (participant in all_participants) {
         trControl = train_control
       )
 
-      # Use the trained model to make predictions
       pauses_5secs$PredictedDurationRF_CV <- predict(rf_model_cv, newdata = pauses_5secs)
       
-      # Calculate evaluation metrics
       print(postResample(pred = pauses_5secs$PredictedDurationRF_CV, obs = pauses_5secs$TotalDuration))
       
-      # Calculate MSE
       mse <- mean((pauses_5secs$PredictedDurationRF - pauses_5secs$TotalDuration)^2)
       print(paste(participant, language, task, "Test MSE:", mse))
       
-      # Calculate RMSE
       rmse <- sqrt(mse)
       print(paste(participant, language, task, "Test RMSE:", rmse))
       
-      # Calculate MAE
       mae <- mean(abs(pauses_5secs$PredictedDurationRF - pauses_5secs$TotalDuration))
       print(paste(participant, language, task, "Test MAE:", mae))
 
-      # Step 3: Visualize Actual vs. Predicted Durations
       plt <- ggplot(pauses_5secs, aes(x = as.factor(IntervalStart))) +
         geom_bar(aes(y = TotalDuration, fill = "Pause Duration"), stat = "identity", position = "dodge", color = "steelblue") +
         geom_line(aes(y = PredictedDuration, group = 1, color = "Pred - GAM"), size = 1) +
-        geom_line(aes(y = PredictedDurationGAM_CV, group = 1, color = "Pred - GAM + CV"), size = 1) +
+#        geom_line(aes(y = PredictedDurationGAM_CV, group = 1, color = "Pred - GAM + CV"), size = 1) +
         geom_line(aes(y = PredictedDurationRF, group = 1, color = "Pred - RF"), size = 1) +
         geom_line(aes(y = PredictedDurationRF_CV, group = 1, color = "Pred - RF + CV"), size = 1) +
         scale_fill_manual(values = c("Pause Duration" = "steelblue")) +
@@ -1324,35 +1314,12 @@ for (participant in all_participants) {
         theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
       print(plt)
-# 
-#       # Prepare data for prediction
-#       prediction_data <- data.frame(IntervalStart = seq(min(pauses_5secs$IntervalStart), max(pauses_5secs$IntervalStart), by = 1))
-#       prediction_data$X5_last_5_sec_pause_duration <- mean(pauses_5secs$X5_last_5_sec_pause_duration)
-#       prediction_data$PredictedDuration <- predict(gam_model, newdata = prediction_data, type = "response")
-# 
-#       plt <- ggplot(pauses_5secs, aes(x = as.factor(IntervalStart), y = TotalDuration)) +
-#         geom_bar(stat = "identity", position = "stack", color = "steelblue") +
-#         geom_line(data = prediction_data, aes(x = as.factor(IntervalStart), y = PredictedDuration, group = 1), color = "black") +
-#         theme_minimal() +
-#         labs(x = "Interval Start (s)", y = "Total Duration (s)", title = "Sum of Durations for Every 5-Second Interval") +
-#         theme(axis.text.x = element_text(angle = 45, hjust = 1))
-# 
-#       print(plt)
       
       
     }
   }
 }
 ```
-
-
-
-
-
-
-
-
-
 
 
 #######
@@ -1435,12 +1402,16 @@ pauses <- na.omit(pauses)
 ```
 
 
+∗ For categorical / factor variables, you cannot fit a spline, so you include them as predictors as you would normally do in a GLM: simply specify them in the model formula.
+∗ For the numeric predictors, you wrap them in the smoothing spline function s(). Note that function s() (from package mgcv) has two main arguments in addition to the predictor variable specified:
+· k, which specifies the number of basis functions used for the spline (the default is 9 basis functions).
+· bs, which specifies the type of spline function. 
+The default is bs = "tp", yielding a thin-plate spline basis. A range of other options are available, e.g., by specifying bs = "cr" yields a cubic spline basis. By specifying bs = "re" and a factor variable as the predictor, we obtain a random effect estimated with respect to the factor variable. 
+
+
 ```{r}
-# Load necessary package
-library(mgcv)
 library(Metrics)
 
-# all_participants <- sort(unique(c(pauses$ParticipantID)))
 all_participants <- c(SELECTED_PARTICIPANT_ID)
   
 languages <- c("L1", "L2")
@@ -1452,49 +1423,43 @@ for (participant in all_participants) {
       track_pauses <- pauses %>% filter(ParticipantID == participant, Task == task, Language == language)
       track_pauses <- track_pauses[order(track_pauses$tmin),]
       
-      set.seed(123) # For reproducibility
+      set.seed(123) 
       trainIndex <- createDataPartition(track_pauses$PauseDuration, p = .8, 
                                         list = FALSE, 
                                         times = 1)
       trainData <- track_pauses[trainIndex, ]
       testData <- track_pauses[-trainIndex, ]
-
-      # Sample GAM model fitting, ignoring random effects
+      
+      # GAM model fitting, ignoring random effects
       gam_model <- gam(PauseDuration ~ s(X1_prev_pause_duration) + 
-                                         s(X2_prev_speech_duration) + 
-                                         s(X3_prev_speech_complexity) +
-                                         s(X4_prev_speech_syllables, k = 4) +
+                                         s(X2_prev_speech_duration) +
+                                         s(X3_prev_speech_complexity, k = 3) +
+                                         s(X4_prev_speech_syllables, k = 3) +
                                          factor(X5_prev_pause_type) +
-                                         s(X6_prev_speech_rate) +
-                                         s(X7_prev_articulation_rate) +
-                                         s(tmin) +
+                                         s(X6_prev_speech_rate, k = 3) +
+                                         s(X7_prev_articulation_rate, k = 3) +
+                                         s(TransitionPoint) +
                                          PauseType
                        ,data = trainData)
 
-      # Summary of the model
+
       print(summary(gam_model))
 
-      # Plotting the smooth terms to understand their effects
-      par(mfrow = c(3, 2))
       plot(gam_model, residuals = TRUE)
 
-      # Predicting on the test set
       predictions <- predict(gam_model, newdata = testData)
       testData$Predictions <- predictions
       
-      # Actual vs Predicted Plot
       plt <- ggplot(testData, aes(x = tmin, y = Predictions)) +
         geom_point(alpha = 0.5) +
-        geom_line(aes(x = tmin, y = PauseDuration), color = "red") +  # Adds a 45 degree line for reference
+        geom_line(aes(x = tmin, y = PauseDuration), color = "red") +  
         labs(x = "Actual Pause Duration", y = "Predicted Pause Duration", title = "Actual vs Predicted Pause Durations") +
         theme_minimal()
       print(plt)
 
-      # Calculating performance metrics
       rmse_value <- rmse(testData$PauseDuration, predictions)
       r_squared <- R2(predictions, testData$PauseDuration)
       
-      # Printing performance metrics
       cat("RMSE for Participant", participant, "in Language", language, "for Task", task, ":", rmse_value, "\n")
       cat("R^2 for Participant", participant, "in Language", language, "for Task", task, ":", r_squared, "\n")
       print("======================================================================")
@@ -1503,14 +1468,29 @@ for (participant in all_participants) {
 }
 ```
 
+## Interpretation 
+
+X1_prev_pause_duration: Duration of the previous pause. A significant predictor in L2 models, suggesting that the length of the preceding pause can have more influence on the current pause duration rather than L1.
+
+X3_prev_speech_complexity: Complexity of the preceding speech segment. This predictor showed significance only in L2 task 2, implying that more complex speech segments might influence the subsequent pause duration.
+
+X5_prev_pause_type: Type of the previous pause (silent or filled). Generally, this categorical predictor did not show a consistent significant effect across tasks and languages, suggesting that the type of previous pause doesn’t have a strong direct impact on the duration of the current pause.
+
+X6_prev_speech_rate & X7_prev_articulation_rate: This predictor were significant in all languages and tasks, indicating that faster or slower speech rates and articulation rate before a pause can affect the length of the pause. 
+
+TransitionPoint: The transition between speech and pause. Its significance across all models shows the complex dynamics at play in speech-to-pause transitions.
+
+PauseType: The type of the current pause (silent or filled). This predictor was significant in all models, indicating that different types of pauses inherently have different durations.
+
+The variation in significance of predictors across tasks and languages shows that the dynamics of speech and pause are influenced by a complex interplay of factors including the cognitive and linguistic demands of the task, the language spoken, and the specific characteristics of the preceding speech and pauses.
+
+
 ```{r}
-# Load necessary packages
 library(randomForest)
 library(dplyr)
-library(Metrics) # For RMSE
-library(caret) # For R^2 and data splitting
+library(Metrics) 
+library(caret) 
 
-# Assuming 'pauses' is your dataset
 all_participants <- c(SELECTED_PARTICIPANT_ID)
 languages <- c("L1", "L2")
 tasks <- c("Task1", "Task2")
@@ -1522,15 +1502,15 @@ for (participant in all_participants) {
                       filter(ParticipantID == participant, Task == task, Language == language) %>%
                       arrange(tmin)
 
-      # Splitting data into training and test sets
-      set.seed(123) # For reproducibility
+
+      set.seed(123) 
       trainIndex <- createDataPartition(track_pauses$PauseDuration, p = .8, 
                                         list = FALSE, 
                                         times = 1)
       trainData <- track_pauses[trainIndex, ]
       testData <- track_pauses[-trainIndex, ]
 
-      # Fitting Random Forest model on the training set
+      # Fitting Random Forest model 
       rf_model <- randomForest(PauseDuration ~ X1_prev_pause_duration + 
                                                 X2_prev_speech_duration + 
                                                 X3_prev_speech_complexity +
@@ -1538,15 +1518,15 @@ for (participant in all_participants) {
                                                 X5_prev_pause_type +
                                                 X6_prev_speech_rate +
                                                 X7_prev_articulation_rate +
-                                                tmin +
+                                                TransitionPoint +
                                                 PauseType,
                                 data = trainData, 
-                                ntree = 500) # You can adjust the number of trees
+                                ntree = 500) 
 
-      # Summary of the model
+
       print(rf_model)
       
-      # Predicting on the test set
+
       predictions <- predict(rf_model, newdata = testData)
       testData$Predictions <- predictions
       
@@ -1565,15 +1545,10 @@ for (participant in all_participants) {
       # Plot 2: Actual vs Predicted Pause Durations
       plt <- ggplot(testData, aes(x = tmin, y = Predictions)) +
         geom_point(alpha = 0.5) +
-        geom_line(aes(x = tmin, y = PauseDuration), color = "red") +  # Adds a 45 degree line for reference
+        geom_line(aes(x = tmin, y = PauseDuration), color = "red") + 
         labs(x = "Actual Pause Duration", y = "Predicted Pause Duration", 
              title = paste("Actual vs Predicted Pause Durations for Participant", participant, "Language", language, "Task", task))
       print(plt)
-      # Calculate and print performance metrics
-      # rmse_value <- rmse(testData$PauseDuration, predictions)
-      # r_squared <- R2(predictions, testData$PauseDuration)
-      # cat("RMSE for Participant", participant, "Language", language, "Task", task, ":", rmse_value, "\n")
-      # cat("R^2 for Participant", participant, "Language", language, "Task", task, ":", r_squared, "\n")
 
     }
   }
@@ -1581,11 +1556,8 @@ for (participant in all_participants) {
 ```
 
 
-
-
-
-
 ```{r}
+
 # Sample GAMM model fitting with crossed random effects
 gamm_model <- bam(PauseDuration ~ s(X1_prev_pause_duration) + 
                                     s(X2_prev_speech_duration) + 
@@ -1596,25 +1568,19 @@ gamm_model <- bam(PauseDuration ~ s(X1_prev_pause_duration) +
                                     PauseType +
                                     Task
                   ,random = ~(1|ParticipantID) + (1|Language),data = pauses,
-                  discrete = TRUE) # 'discrete = TRUE' can speed up large models
+                  discrete = TRUE) 
 
-# Summary of the model
 summary(gamm_model)
 
-
-# Assuming 'data' is your dataset and 'gamm_model' is your fitted model
 predicted_values <- predict(gamm_model, newdata = pauses)
 pauses$PredictedPauseDuration <- predicted_values
 actual_values <- pauses$PauseDuration
 
-# Plotting actual vs. predicted pause durations for a specific SoundfileID
 specific_soundtrack <- "AMGOPP1_L2_Task2.wav"
 subset_data <- pauses[pauses$SoundfileID == specific_soundtrack, ]
 
-# Create a long format data for plotting with ggplot
 subset_data_long <- reshape2::melt(subset_data, id.vars = "tmin", measure.vars = c("PauseDuration", "PredictedPauseDuration"))
 
-# Plot using ggplot
 ggplot(subset_data_long, aes(x = tmin, y = value, color = variable)) + 
   geom_line() + 
   labs(x = "Time", y = "Pause Duration", color = "Legend") +
