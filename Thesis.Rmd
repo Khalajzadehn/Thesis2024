@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 ---
 title: "Initial Data Research"
 author: "Niloofar Khalajzadeh"
@@ -1588,4 +1589,1721 @@ ggplot(subset_data_long, aes(x = tmin, y = value, color = variable)) +
   scale_color_manual(values = c("PauseDuration" = "blue", "PredictedPauseDuration" = "red"), labels = c("Actual", "Predicted")) +
   theme_minimal()
 
+=======
+---
+title: "Initial Data Research"
+author: "Niloofar Khalajzadeh"
+date: "2023-10-29"
+output: pdf_document
+---
+
+
+```
+README PRAAT-output files
+
+All files with .merged.txt are created with the Software PRAAT, they are simple tables created from so-called TexGrids.
+
+Each files contains the data for one participant, performing one task, in either their L1 or L2.
+
+The first column is the soundfile-ID:
+AMGOPP1_L1_Task2.wav is the ID of the participant (AMGOPP1), the langueage (L1 or L2), and the task (Task1 or Task2).
+Task1 in L1 is not the exact same task as Task1 in L2, but a very similar task requiring similar linguistic and cognitive demands.
+
+The second column is "tmin": for duration-events, this is the start of the event; for point-events, the start and the end will be the same.
+
+The third column is "tier": the name of the variable. These are the variables related to fluency:
+Phrases: interval variable either 0 (speech) or 1 (silent pause)
+DFauto (English/Dutch): interval variable which is 1 for a filled pause, and 0 for speech
+Nuclei: point variable that is a number counting up, for each nucleus (middle) of a syllable throughout the sound file
+
+The following tiers are all interval-tiers, related to the words, as looked up in an external corpus:
+Lg10WF: Log frequency of occurrence in an external corpus (this is the best variable for lexical complexity)
+SUBTLEXWF: Fequency per million in external corpus
+CDcount: kind of freqency/count in external corpus
+FREQlemma: yet another, frequency of the lemma not the word in external corpus
+FREQlow: yet another frequency count
+SUBTLEXCD: yet another frequency count
+Lg10CD: log of a frequency count
+CDlow: yet another frequency count
+FREQcount: yet another frequency count
+POStags: part of speech tag
+
+The following two tiers are also interval-tiers, related to the words
+FreqDist: measure for frequency of occurrence within the soundfile itself
+Repetitions: measure for repetetiveness of the word until now. It ranges from 0 (word never uttered until now) to 1 (previous word was the same word)
+
+The fourth column is the value of the tier (called 'text')
+Phrases: 1 or 0
+DFauto: 1 or 0
+Nuclei: an absolute number
+Lg10WF etc: a number
+POStags: a code
+FreqDist: a number
+Repetitions: a number ranging from 0 to 1
+
+NOTE that sometimes PRAAT outputs "--undefined--" or "MISSING", which you can change to "NA"
+
+The fifth column is 'tmax', which is the same value of 'tmin' for the point tier "Nuclei", and which is the ending time of interval-tiers
+
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(stringr)
+library(readr)
+library(dplyr)
+library(patchwork)
+library(ggplot2)
+library(caret)
+```
+
+```{r}
+FILES_DIRECTORY <- "./files_converted/"
+```
+
+
+```{r}
+get_soundtrack <- function() {
+  recordings <- list()
+  for (file in list.files(FILES_DIRECTORY)) {
+    if (endsWith(file, ".merged.txt")) {
+      recordings <- append(recordings, file)
+    }
+  }
+  recordings
+}
+```
+
+```{r warning = FALSE, message = FALSE}
+recordings <- get_soundtrack()
+
+df <- data.frame()
+
+for (r in recordings) {
+  f_path <- paste(FILES_DIRECTORY, r, sep="")
+  r_df <- read_table(f_path)
+  df <- rbind(df, r_df)
+}
+df[df == "--undefined--"] <- NA
+df[df == "MISSING"] <- NA
+
+```
+
+```{r}
+SELECTED_PARTICIPANT_ID = "KIKIPP2"
+TIME_INTERVAL = 5
+```
+
+## Prepare "dfauto_df" data frame
+```{r}
+dfauto_df <- df[startsWith(df$tier, "DFauto"),]
+dfauto_df <- dfauto_df[!is.na(dfauto_df$text), ]
+
+dfauto_df$tmin <- as.numeric(dfauto_df$tmin)
+dfauto_df$tmax <- as.numeric(dfauto_df$tmax)
+
+dfauto_df$duration <- dfauto_df$tmax - dfauto_df$tmin
+dfauto_df$ParticipantID <- gsub("(.*)_L[12]_Task[12]\\.wav", "\\1", dfauto_df$SoundfileID)
+dfauto_df$Language <- gsub(".*_(L[12])_Task[12]\\.wav", "\\1", dfauto_df$SoundfileID)
+dfauto_df$Task <- gsub(".*_L[12]_(Task[12])\\.wav", "\\1", dfauto_df$SoundfileID)
+dfauto_df$TransitionPoint <- dfauto_df$tmax
+dfauto_df <- dfauto_df %>%
+  group_by(ParticipantID, Language, Task) %>%
+  mutate(PauseDuration = ifelse(text == 1, duration, 0)) %>%
+  ungroup()
+
+print(dfauto_df)
+```
+## Prepare "phrases_df" data frame
+```{r}
+phrases_df <- df[startsWith(df$tier, "Phrases"),]
+phrases_df <- phrases_df[!is.na(phrases_df$text), ]
+
+phrases_df$tmin <- as.numeric(phrases_df$tmin)
+phrases_df$tmax <- as.numeric(phrases_df$tmax)
+
+phrases_df$duration <- phrases_df$tmax - phrases_df$tmin
+phrases_df$ParticipantID <- str_extract(phrases_df$SoundfileID, "^[A-Z]+\\d+")
+phrases_df$Language <- ifelse(str_detect(phrases_df$SoundfileID, "_L1_"), "L1", "L2")
+phrases_df$Task <- ifelse(str_detect(phrases_df$SoundfileID, "_Task1"), "Task1", "Task2")
+phrases_df$TransitionPoint <- phrases_df$tmax
+phrases_df <- phrases_df %>%
+  group_by(ParticipantID, Language, Task) %>%
+  mutate(PauseDuration = ifelse(text == 1, duration, 0)) %>%
+  ungroup()
+
+print(phrases_df)
+```
+
+## Prepare "nuclei_df" data frame
+```{r}
+nuclei_df <- df[startsWith(df$tier, "Nuclei"),]
+nuclei_df <- nuclei_df[!is.na(nuclei_df$text), ]
+
+nuclei_df$tmax <- as.double(nuclei_df$tmax)
+
+nuclei_df$ParticipantID <- gsub("(.*)_L[12]_Task[12]\\.wav", "\\1", nuclei_df$SoundfileID)
+nuclei_df$Language <- gsub(".*_(L[12])_Task[12]\\.wav", "\\1", nuclei_df$SoundfileID)
+nuclei_df$Task <- gsub(".*_L[12]_(Task[12])\\.wav", "\\1", nuclei_df$SoundfileID)
+
+print(nuclei_df)
+```
+
+
+## Prepare "wordfreq_df" data frame
+```{r}
+wordfreq_df <- df[startsWith(df$tier, "Lg10WF"),]
+wordfreq_df <- wordfreq_df[!is.na(wordfreq_df$text), ]
+
+wordfreq_df$tmin <- as.numeric(wordfreq_df$tmin)
+wordfreq_df$tmax <- as.numeric(wordfreq_df$tmax)
+
+wordfreq_df$ParticipantID <- str_extract(wordfreq_df$SoundfileID, "^[A-Z]+\\d+")
+wordfreq_df$Language <- ifelse(str_detect(wordfreq_df$SoundfileID, "_L1_"), "L1", "L2")
+wordfreq_df$Task <- ifelse(str_detect(wordfreq_df$SoundfileID, "_Task1"), "Task1", "Task2")
+
+print(wordfreq_df)
+```
+
+
+
+```{r}
+dfauto_L1_Task1 <- dfauto_df[dfauto_df$Language == "L1" & dfauto_df$Task == "Task1", ]
+
+dfauto_L1_Task1$ypos <- seq_along(dfauto_L1_Task1$tmin)
+
+plot_L1_Task1 <-  ggplot(dfauto_L1_Task1, aes(x = tmin, xend = tmax, y = SoundfileID, yend = SoundfileID)) +
+  geom_segment(aes(color = SoundfileID), linewidth = 1) +
+  theme_minimal() +
+  labs(title = "Pauses in Soundtracks",
+       x = "Time (seconds)",
+       y = "Soundtrack ID")
+```
+
+```{r}
+dfauto_L1_Task2 <- dfauto_df[dfauto_df$Language == "L1" & dfauto_df$Task == "Task2", ]
+
+dfauto_L1_Task2$ypos <- seq_along(dfauto_L1_Task2$tmin)
+
+plot_L1_Task2 <- ggplot(dfauto_L1_Task2, aes(x = tmin, xend = tmax, y = SoundfileID, yend = SoundfileID)) +
+  geom_segment(aes(color = SoundfileID), size = 1) +
+  theme_minimal() +
+  labs(title = "Pauses in Soundtracks",
+       x = "Time (seconds)",
+       y = "Soundtrack ID")
+```
+
+```{r}
+dfauto_L2_Task1 <- dfauto_df[dfauto_df$Language == "L2" & dfauto_df$Task == "Task1", ]
+
+dfauto_L2_Task1$ypos <- seq_along(dfauto_L2_Task1$tmin)
+
+plot_L2_Task1 <- ggplot(dfauto_L2_Task1, aes(x = tmin, xend = tmax, y = SoundfileID, yend = SoundfileID)) +
+  geom_segment(aes(color = SoundfileID), size = 1) +
+  theme_minimal() +
+  labs(title = "Pauses in Soundtracks",
+       x = "Time (seconds)",
+       y = "Soundtrack ID")
+```
+
+```{r}
+dfauto_L2_Task2 <- dfauto_df[dfauto_df$Language == "L2" & dfauto_df$Task == "Task2", ]
+
+dfauto_L2_Task2$ypos <- seq_along(dfauto_L2_Task2$tmin)
+
+plot_L2_Task2 <- ggplot(dfauto_L2_Task2, aes(x = tmin, xend = tmax, y = SoundfileID, yend = SoundfileID)) +
+  geom_segment(aes(color = SoundfileID), size = 1) +
+  theme_minimal() +
+  labs(title = "Pauses in Soundtracks",
+       x = "Time (seconds)",
+       y = "Soundtrack ID")
+```
+
+```{r}
+plot_L1_Task2 <- plot_L1_Task2 + theme(legend.position = "none")
+plot_L2_Task2 <- plot_L2_Task2 + theme(legend.position = "none")
+
+combined_plot <- plot_L1_Task2 + plot_L2_Task2 
+
+combined_plot_layout <- combined_plot + plot_layout(ncol = 2, nrow = 1)
+
+combined_plot_layout
+```
+
+```{r}
+participant_plots <- lapply(unique(phrases_df$ParticipantID), function(participant) {
+  participant_df <- phrases_df %>% filter(ParticipantID == participant)
+  
+  ggplot(participant_df, aes(x = tmin, xend = tmax, y = as.factor(text), yend = as.factor(text))) +
+    geom_segment(aes(color = as.factor(text)), size = 1) +
+    scale_color_manual(values = c("0" = "blue", "1" = "red")) +
+    facet_grid(Language ~ Task) +
+    labs(title = paste("Phrases for Participant", participant),
+         x = "Time (seconds)",
+         y = "Phrase (0 = Speech, 1 = Silent Pause)",
+         color = "Phrase") +
+    theme_minimal()
+})
+
+for (plot in participant_plots) {
+  print(plot)
+}
+
+```
+
+```{r}
+participant_plots <- lapply(unique(dfauto_df$ParticipantID), function(participant) {
+  participant_df <- dfauto_df %>% filter(ParticipantID == participant)
+  
+  ggplot(participant_df, aes(x = tmin, xend = tmax, y = as.factor(text), yend = as.factor(text))) +
+    geom_segment(aes(color = as.factor(text)), size = 1) +
+    scale_color_manual(values = c("0" = "green", "1" = "purple")) +
+    facet_grid(Language ~ Task) +
+    labs(title = paste("Dfauto for Participant", participant),
+         x = "Time (seconds)",
+         y = "0 = Speech, 1 = Filled Pause",
+         color = "Dfauto") +
+    theme_minimal()
+})
+
+for (plot in participant_plots) {
+  print(plot)
+}
+
+```
+
+```{r}
+t_dfauto_df <- dfauto_df
+t_phrases_df <- phrases_df
+
+t_phrases_df$text <- as.numeric(phrases_df$text)
+t_dfauto_df$text <- as.numeric(dfauto_df$text) + 2
+
+all_participants <- unique(c(t_dfauto_df$ParticipantID))
+
+participant_plots_2 <- lapply(all_participants, function(participant) {
+  phrases_participant_df <- t_phrases_df %>% filter(ParticipantID == participant)
+  dfauto_participant_df <- t_dfauto_df %>% filter(ParticipantID == participant)
+  
+  combined_df <- rbind(phrases_participant_df, dfauto_participant_df)
+
+  ggplot(combined_df, aes(x = tmin, xend = tmax, y = as.factor(text), yend = as.factor(text))) +
+    geom_segment(aes(color = as.factor(text)), size = 1) +
+    scale_color_manual(values = c("0" = "blue", "1" = "red", "2" = "green", "3" = "purple")) +
+    facet_grid(Language ~ Task) +
+    scale_y_discrete(breaks = c("0", "1", "2", "3"), labels = c("Phrase - Speech", "Phrase - Silent Pause", "DFAuto - Speech", "DFAuto - Filled Pause")) +
+    labs(title = paste("Phrases and Dfauto for Participant", participant),
+         x = "Time (seconds)",
+         y = "Phrase/Dfauto (0,1 = Phrases, 2,3 = Dfauto)",
+         color = "Phrase/Dfauto") +
+    theme_minimal()
+})
+
+for (plot in participant_plots_2) {
+  print(plot)
+}
+```
+
+
+## Utterance Fluency Measurements
+
+We are going to investigate the fluctuations of different aspects of fluency according to the recordings that we have from different participants. First, we need to take a look at these aspects and define the measurements and metrics of fluency on our dataset.
+
+Based on the article "Fluency in Second Language Testing: Insights From Different Disciplines (2018)" looking at the aspects of fluency from the perspective of Applied linguistics, we can define the following measurements as the main measures of utterance fluency. 
+
+- Speech rate = (Number of syllables/total time)
+- Pruned speech rate Articulation rate = (Number of syllables – number of non-fluent syllables)/total time
+- Articulation rate = (Number of syllables/speaking time)
+- Pace = (Number of stressed syllables/total time)
+- Mean length of utterance = (Total speaking time/number of utterances or Number of syllables/number of utterances)
+- Number of silent pauses (per minute) = (Number of silent pauses/total time or speaking time)
+- Mean duration of silent pauses = (Pausing time/number of silent pauses)
+- Phonation time ratio = (Speaking time/Total time)
+- Number of filled pauses (per minute) = (Number of filled pauses/total time or speaking time)
+- Number of repetitions (per minute) = (Number of repetitions/total time or speaking time)
+- Number of repairs (per minute) = (Number of repairs and restarts/total time or speaking time)
+
+Later on in the same article we read "Objective measures of speech rate and pausing (measured in different ways) have, in later studies, always come up as significant predictors of perceived fluency"
+
+We have the dataset of recordings from linguistic tasks done by participants with different fluency levels, noted by the PRAAT notation (scheme). The objective measures mentioned above can be developed based on the dataset that we have.
+
+Let's choose a few measurements to start with:
+
+- Speech Rate
+- Articulation Rate
+- Number of silent pauses (per minute)
+- Mean length of silent pauses (per minute)
+
+Apart from the objective measures of utterance fluency, we should also take a look at the measures of lexical complexity. As the main aspect of lexical complexity, we can consider the frequency of the occurance of each word in an external corpus. The PRAAT method introduces the variable "Lg10WF" which is the log frequency of occurrence in an external corpus and we can develop a new measurement based on this variable for lexical complexity.
+
+- Accumulated complexity = (Sum of all word frequencies throughout the task)
+- Others? (Discuss later)
+
+## Variable development
+
+| participant | task | l1 | l2 | speech_rate | articulation_rate | silent_pause_per_min | mean_length_silent_pause_per_min |
+|-------------|------|----|----|-------------|-------------------|----------------------|----------------------------------|
+| 1           | 1    | 1  | 0  | 10          | 12                | 14                   | 15                               |
+| ...         | ..   | .. | .. | ..          | ..                | ..                   | ..                               |
+
+We need to develop our new dataset according to the example provided above. All the measurements mentioned in the previous section about objective fluency, must be added to this dataset. We can later add the measurements of lexical complexity to the same dataset.
+
+### Speech Rate
+
+Calculating the speech rate for each task is a relatively easy thing to do. According to the article(1) we define "Speech Rate" with the formula "Number of syllables/total time". The only thing we need to do is to count the number of syllables used in each task and divide it by the total duration of the performance of the task. The variable "Nuclei" can be used to our convenience since it's an accumulating value counting up all the syllables in the task.
+
+- Get the last "Nuclei" value in the task performance
+- Divide by the total duration of task
+
+### Articulation Rate
+
+The Articulation Rate calculation is quite similar to the Speech Rate. The only difference is that for Articulation Rate, we don't divide the number of syllables by the total duration of the task, but we devide it by the duration in which the performer is speaking and not pausing.
+
+In order to calculate the Speaking time of each task, we can look at the interval variables that we have "Phrases", "DFAuto". We can sum up all the intervals where (Phrases = 0 or DFAuto = 1). After we have the Speaking time of the task, we can easily calculate the Articulation Rate for each participant.
+
+### Silent Pauses (per minute)
+
+In order to calculate this variable, we need to count all the intervals where "Phrases = 1" and then divide it by the total duration of the task.
+
+### Mean length silent pauses (per minute)
+
+We will call this variable MLSP from now on. The calculation of MLSP is very similar to the previous variable. With the difference that instead of counting the silent pause intervals, we need to sum the intervals and get the Mean value of these silent pause interals. And finally we divide the value by the duration of the task.
+
+
+## TimeSeries variable development
+
+In the previous section we introduced 4 different measurement variables for objective fluency. Our main research question is about the investigation of the flucations of each of these variables throughout the performance of each task by each participant. Therefore we need to create a timeseries dataset off of each of these variables point in time. This way we will be able to look at the flucations.
+
+The following table needs to be created per each performed task:
+
+| L1 | L2 | Task | timestamp | speech_rate | articulation_rate | silent_pause_per_min | mean_length_silent_pause_per_min |
+|----|----|------|-----------|-------------|-------------------|----------------------|----------------------------------|
+| 1  | 0  | 1    | 10        | 10          | 12                | 13                   | 14                               |
+|    |    |      | 20        | 11          | 12                | 14                   | 10                               |
+| .. | .. | ..   | ..        | ..          | ..                | ..                   | ..                               |
+
+Using a step of 10 seconds in our example, we create the timeseries dataset for the defined values speech_rate, articulation_rate, 
+silent_pause_per_min, mean_length_silent_pause_per_min.
+
+Now we can start investigating the fluctuations of each of these variables through time.
+
+```{r}
+# Speech rate (Number of syllables/ total time)
+library(dplyr)
+
+calculate_speech_rate <- function(data, language, task) {
+  
+  filtered_data <- data %>%
+    filter(Language == language, Task == task)
+  
+  speech_rates <- c()
+  time_intervals <- seq(0, max(filtered_data$tmax), by = TIME_INTERVAL)
+  
+  total_nucleis <- 0
+  for (i in 1:(length(time_intervals) - 1)) {
+    start_time <- time_intervals[i]
+    end_time <- time_intervals[i + 1]
+  
+    timespan <- filtered_data[filtered_data$tmax >= start_time & filtered_data$tmax <= end_time,]
+    timespan_ordered <- timespan[order(timespan$tmax),]
+
+    nuclei_count <- as.numeric(timespan[nrow(timespan),]$text) - total_nucleis
+
+    if (length(nuclei_count) < 1) {
+      speech_rates <- c(speech_rates, 0)
+      next
+    }
+    
+    rate <- nuclei_count / TIME_INTERVAL
+    total_nucleis = total_nucleis + nuclei_count
+
+    speech_rates <- c(speech_rates, rate)
+  }
+
+  return(data.frame(TimeInterval = time_intervals[-length(time_intervals)], SpeechRate = speech_rates))
+}
+
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+speech_rate_data <- data.frame()
+
+for (language in languages) {
+  for (task in tasks) {
+    nuclei_df_participant <- nuclei_df %>% filter(ParticipantID == SELECTED_PARTICIPANT_ID)
+
+    result <- calculate_speech_rate(nuclei_df_participant, language, task)
+    result$Language <- language
+    result$Task <- task
+    speech_rate_data <- bind_rows(speech_rate_data, result)
+  }
+}
+
+ggplot(speech_rate_data, aes(x = TimeInterval, y = SpeechRate, group = interaction(Language, Task), color = interaction(Language, Task))) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Speech Rate Over Time",
+    x = "Time Interval (seconds)",
+    y = "Speech Rate"
+  ) +
+  theme_minimal() +
+  facet_grid(Language ~ Task)
+
+```
+
+```{r}
+#  Articulation Rate (Number of syllables/ speaking time)
+
+# df$ParticipantID <- gsub("(.*)_L[12]_Task[12]\\.wav", "\\1", df$SoundfileID)
+# df$Language <- gsub(".*_(L[12])_Task[12]\\.wav", "\\1", df$SoundfileID)
+# df$Task <- gsub(".*_L[12]_(Task[12])\\.wav", "\\1", df$SoundfileID)
+
+calculate_articulation_rate <- function(nuclei_data, phrases_data, language, task) {
+  
+  nuclei_filtered <- nuclei_data %>% filter(Language == language, Task == task)
+  
+  phrases_filtered <- phrases_data %>% filter(Language == language, Task == task)
+  
+  silent_pause_intervals <- phrases_filtered %>%
+    filter(text == 1) %>%
+    select(tmin, tmax) %>%
+    arrange(tmin)
+  
+  speaking_time <- 0
+  for (i in 1:(nrow(silent_pause_intervals) - 1)) {
+    speaking_time <- speaking_time + (silent_pause_intervals$tmin[i + 1] - silent_pause_intervals$tmax[i])
+  }
+  
+  total_time <- max(nuclei_filtered$tmax)
+  number_of_syllables <- nrow(nuclei_filtered)
+  
+  time_intervals <- seq(0, total_time, by = TIME_INTERVAL)
+  articulation_rates <- numeric(length(time_intervals))
+
+  for (i in 1:length(time_intervals)) {
+    start_time <- time_intervals[i]
+    end_time <- start_time + TIME_INTERVAL
+    
+    syllables_in_interval <- nuclei_filtered %>%
+      filter(tmax >= start_time & tmax <= end_time)
+    
+    syllables_count <- nrow(syllables_in_interval)
+    
+    if (speaking_time > 0) {
+      articulation_rates[i] <- syllables_count / TIME_INTERVAL
+    } else {
+      articulation_rates[i] <- 0
+    }
+  }
+  
+  result <- data.frame(
+    Language = language,
+    Task = task,
+    TimeInterval = time_intervals,
+    ArticulationRate = articulation_rates
+  )
+  
+  return(result)
+}
+
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+articulation_rate_data <- data.frame()
+
+for (language in languages) {
+  for (task in tasks) {
+    nuclei_df_participant <- nuclei_df %>% filter(ParticipantID == SELECTED_PARTICIPANT_ID)
+    phrases_df_participant <- phrases_df %>% filter(ParticipantID == SELECTED_PARTICIPANT_ID)
+
+    result <- calculate_articulation_rate(nuclei_df_participant, phrases_df_participant, language, task)
+    articulation_rate_data <- bind_rows(articulation_rate_data, result)
+  }
+}
+
+ggplot(articulation_rate_data, aes(x = TimeInterval, y = ArticulationRate, group = interaction(Language, Task), color = interaction(Language, Task))) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Articulation Rate Over Time",
+    x = "Time Interval (seconds)",
+    y = "Articulation Rate"
+  ) +
+  theme_minimal() +
+  facet_grid(Language ~ Task)
+
+```
+
+
+```{r}
+# Number of Silent Pauses
+phrases_df_participant <- phrases_df %>% filter(ParticipantID == SELECTED_PARTICIPANT_ID)
+
+calculate_number_of_silent_pauses <- function(phrases_data, language, task) {
+  
+  phrases_filtered <- phrases_data %>% filter(Language == language, Task == task)
+  
+  number_of_silent_pauses <- phrases_filtered %>%
+    filter(text == 1) %>%
+    group_by(interval = cut(tmax, breaks = seq(0, 120, by = TIME_INTERVAL))) %>%
+    summarise(Count = n()) %>%
+    ungroup()
+  
+  number_of_silent_pauses$SilentPauses <- number_of_silent_pauses$Count
+  
+  number_of_silent_pauses$Language <- language
+  number_of_silent_pauses$Task <- task
+  
+  return(number_of_silent_pauses)
+}
+
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+number_of_silent_pauses_data <- data.frame()
+
+for (language in languages) {
+  for (task in tasks) {
+    result <- calculate_number_of_silent_pauses(phrases_df_participant, language, task)
+    number_of_silent_pauses_data <- bind_rows(number_of_silent_pauses_data, result)
+  }
+}
+
+
+ggplot(number_of_silent_pauses_data, aes(x = interval, y = SilentPauses, color = interaction(Language, Task), group = 1)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Number of Silent Pauses",
+    x = "Time Interval (seconds)",
+    y = "Number of Silent Pauses"
+  ) +
+  theme_minimal() +
+  facet_grid(Language ~ Task) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+```
+
+
+```{r}
+# Number of filled puases
+
+dfauto_df_participant <- dfauto_df %>% filter(ParticipantID == SELECTED_PARTICIPANT_ID)
+
+calculate_number_of_filled_pauses <- function(dfauto_data, language, task) {
+  
+  dfauto_filtered <- dfauto_data %>%
+    filter(Language == language, Task == task)
+  
+  number_of_filled_pauses <- dfauto_filtered %>%
+    filter(text == 1) %>%
+    group_by(interval = cut(tmax, breaks = seq(0, 120, by = TIME_INTERVAL))) %>%
+    summarise(Count = n()) %>%
+    ungroup()
+  
+  number_of_filled_pauses$FilledPauses <- number_of_filled_pauses$Count
+  
+  number_of_filled_pauses$Language <- language
+  number_of_filled_pauses$Task <- task
+  
+  return(number_of_filled_pauses)
+}
+
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+number_of_filled_pauses_data <- data.frame()
+
+for (language in languages) {
+  for (task in tasks) {
+    result <- calculate_number_of_filled_pauses(dfauto_df_participant, language, task)
+    number_of_filled_pauses_data <- bind_rows(number_of_filled_pauses_data, result)
+  }
+}
+
+
+ggplot(number_of_filled_pauses_data, aes(x = interval, y = FilledPauses, color = interaction(Language, Task), group = 1)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Number of Filled Pauses",
+    x = "Time Interval (seconds)",
+    y = "Number of Filled Pauses"
+  ) +
+  theme_minimal() +
+  facet_grid(Language ~ Task) + theme(axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+```
+
+# Predicting filled or silent pauses for one participant in each language and task
+
+## Random Forest - Silent Pauses
+
+Here we are getting the warning that there are very few unique values for the number of silent pauses. Since they vary in a range of 0 to 10, Random Forest might not be the best model for regression here. But we also don't want to do classification based on the number of pauses.
+
+(QUESTION) => Should we keep this a continuous regression rather than a classification?
+
+We are also seeing a high value for the MSE which means there is a high amount of errors in the predictions.
+
+```{r}
+library(randomForest)
+
+silentpauses_df <- number_of_silent_pauses_data %>%
+  group_by(Language, Task) %>%
+  arrange(interval) %>%
+  mutate(
+    lag1 = lag(SilentPauses, 1),
+    lag2 = lag(SilentPauses, 2)
+  ) %>%
+  ungroup() 
+
+silentpauses_df <- na.omit(silentpauses_df)
+
+silentpauses_df$Language <- as.factor(silentpauses_df$Language)
+silentpauses_df$Task <- as.factor(silentpauses_df$Task)
+
+train_index <- floor(0.8 * nrow(silentpauses_df))
+
+train_data <- silentpauses_df[1:train_index, ]
+test_data <- silentpauses_df[(train_index + 1):nrow(silentpauses_df), ]
+
+rf_model <- randomForest(SilentPauses ~ lag1 + lag2 + Language + Task, data = train_data)
+
+predictions <- predict(rf_model, newdata = test_data)
+
+mse <- mean((predictions - test_data$SilentPauses)^2)
+
+mae <- mean(abs(predictions - test_data$SilentPauses))
+
+print("===== MSE =====")
+print(mse)
+print("===== MAE =====")
+print(mae)
+```
+
+```{r}
+silentpauses_df$interval <- as.character(silentpauses_df$interval)
+silentpauses_df$interval_n <- as.numeric(str_extract(silentpauses_df$interval, "(?<=,)(\\d+)(?=\\])"))
+
+latest_data <- silentpauses_df %>%
+  group_by(Language, Task) %>%
+  summarize(latest_interval = max(interval_n), 
+            latest_SilentPauses = last(SilentPauses),
+            lag1 = nth(SilentPauses, n()-1),
+            lag2 = nth(SilentPauses, n()-2)) %>%
+  ungroup()
+
+predict_data <- latest_data %>%
+  select(-latest_SilentPauses) %>%
+  mutate(interval = paste0("(", latest_interval, ",", latest_interval + TIME_INTERVAL, "]"))
+
+predictions <- predict(rf_model, newdata = predict_data)
+predict_data$Predicted_SilentPauses <- predictions
+predicted_data <- predict_data %>%
+  mutate(interval = paste0("(", latest_interval + TIME_INTERVAL, ",", latest_interval + 2*TIME_INTERVAL, "]"),
+         SilentPauses = Predicted_SilentPauses,
+         Count = Predicted_SilentPauses,
+         Type = 'Predicted') %>%
+  select(-latest_interval, -Predicted_SilentPauses, -lag1, -lag2)
+
+number_of_silent_pauses_data$Type <- "Observed"
+combined_data <- rbind(number_of_silent_pauses_data, predicted_data)
+
+ggplot(combined_data, aes(x = interval, y = SilentPauses, color = interaction(Language, Task), group = 1)) +
+  geom_line(aes(color = interaction(Language, Task))) +
+  geom_point(data = subset(combined_data, Type == 'Observed'), aes(color = interaction(Language, Task))) +
+  geom_point(data = subset(combined_data, Type == 'Predicted'), color = "red", size = 4, shape = 17) +
+  labs(
+    title = "Number of Silent Pauses",
+    x = "Time Interval (seconds)",
+    y = "Number of Silent Pauses"
+  ) +
+  theme_minimal() +
+  facet_grid(Language ~ Task) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+## Random Forest - Filled Pauses
+
+```{r}
+library(randomForest)
+
+filledpauses_df <- number_of_filled_pauses_data %>%
+  group_by(Language, Task) %>%
+  arrange(interval) %>%
+  mutate(
+    lag1 = lag(FilledPauses, 1),
+    lag2 = lag(FilledPauses, 2)
+  ) %>%
+  ungroup() 
+
+filledpauses_df <- na.omit(filledpauses_df)
+
+filledpauses_df$Language <- as.factor(filledpauses_df$Language)
+filledpauses_df$Task <- as.factor(filledpauses_df$Task)
+
+train_index <- floor(0.8 * nrow(filledpauses_df))
+
+train_data <- filledpauses_df[1:train_index, ]
+test_data <- filledpauses_df[(train_index + 1):nrow(filledpauses_df), ]
+
+rf_model <- randomForest(FilledPauses ~ lag1 + lag2 + Language + Task, data = train_data)
+
+predictions <- predict(rf_model, newdata = test_data)
+
+mse <- mean((predictions - test_data$FilledPauses)^2)
+
+mae <- mean(abs(predictions - test_data$FilledPauses))
+
+print("===== MSE =====")
+print(mse)
+print("===== MAE =====")
+print(mae)
+```
+
+```{r}
+filledpauses_df$interval <- as.character(filledpauses_df$interval)
+filledpauses_df$interval_n <- as.numeric(str_extract(filledpauses_df$interval, "(?<=,)(\\d+)(?=\\])"))
+
+latest_data <- filledpauses_df %>%
+  group_by(Language, Task) %>%
+  summarize(latest_interval = max(interval_n), 
+            latest_FilledPauses = last(FilledPauses),
+            lag1 = nth(FilledPauses, n()-1),
+            lag2 = nth(FilledPauses, n()-2)) %>%
+  ungroup()
+
+predict_data <- latest_data %>%
+  select(-latest_FilledPauses) %>%
+  mutate(interval = paste0("(", latest_interval, ",", latest_interval + TIME_INTERVAL, "]"))
+
+predictions <- predict(rf_model, newdata = predict_data)
+predict_data$Predicted_FilledPauses <- predictions
+predicted_data <- predict_data %>%
+  mutate(interval = paste0("(", latest_interval + TIME_INTERVAL, ",", latest_interval + 2*TIME_INTERVAL, "]"),
+         FilledPauses = Predicted_FilledPauses,
+         Count = Predicted_FilledPauses,
+         Type = 'Predicted') %>%
+  select(-latest_interval, -Predicted_FilledPauses, -lag1, -lag2)
+
+number_of_filled_pauses_data$Type <- "Observed"
+combined_data <- rbind(number_of_filled_pauses_data, predicted_data)
+ggplot(combined_data, aes(x = interval, y = FilledPauses, color = interaction(Language, Task), group = 1)) +
+  geom_line(aes(color = interaction(Language, Task))) +
+  geom_point(data = subset(combined_data, Type == 'Observed'), aes(color = interaction(Language, Task))) +
+  geom_point(data = subset(combined_data, Type == 'Predicted'), color = "red", size = 4, shape = 17) +
+  labs(
+    title = "Number of Filled Pauses",
+    x = "Time Interval (seconds)",
+    y = "Number of Filled Pauses"
+  ) +
+  theme_minimal() +
+  facet_grid(Language ~ Task) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+### Predicting transition point and length of silent pauses
+```{r}
+
+participant_data <- phrases_df[phrases_df$ParticipantID == SELECTED_PARTICIPANT_ID & phrases_df$Language == 'L1' & phrases_df$Task == 'Task1', ]
+
+set.seed(123) 
+
+train_indices <- sample(1:nrow(phrases_df), 0.8 * nrow(phrases_df))
+train_data <- phrases_df[train_indices, ]
+test_data <- phrases_df[-train_indices, ]
+
+rf_transition <- randomForest(TransitionPoint ~ duration, data = train_data)
+
+rf_duration <- randomForest(PauseDuration ~ duration, data = train_data)
+
+```
+
+
+
+# Prediction of the length of the next pause
+
+## Preparing dataframe for each participant
+
+We are going to prepare the dataframe to use for training a model in order to predict the length of the next pause. We won't be focusing on the type of the next pause but only if there is a pause and the length of it. For further research we can also focus on predicting the type of the next pause.
+
+For this training we will be using the length of the pause as the response variable and use meaningful features extracted from the previous time periods in each sound track (participant/language/task). Let's define our features as X1, X2, X3, X4.
+
+- X1: How long ago was the last pause (seconds)
+- X2: Length of the previous pause (seconds - duration)
+- X3: Number of syllables since last pause (number)
+- X4: Number of pauses in the last 5 seconds
+
+We can also add (X5, X6, ..) similar to X4 and by extending the time window (5s, 10s, 20s, etc.)
+
+| Y   | t  | X1 | X2 | X3 | X4 | X5 |
+|-----|----|----|----|----|----|----|
+| 1.5 | 1  | 1  | 1  | 1  | 1  | 1  |
+| ..  | .. | .. | .. | .. | .. | .. |
+
+
+### Prepare global "Pauses" dataframe
+```{r}
+dfauto_pauses <- dfauto_df[dfauto_df$text == 1,] %>%
+  mutate(PauseType = "Filled")
+phrases_pauses <- phrases_df[phrases_df$text == 1,] %>%
+  mutate(PauseType = "Silent")
+
+dfauto_phrases <- dfauto_df[dfauto_df$text == 0,] %>%
+  mutate(PhraseType = "Filled")
+phrases_phrases <- phrases_df[phrases_df$text == 0,] %>%
+  mutate(PhraseType = "Silent")
+
+pauses <- rbind(dfauto_pauses, phrases_pauses)
+phrases <- rbind(dfauto_phrases, phrases_phrases)
+
+pauses <- pauses[with(pauses, order(SoundfileID, tmin)),]
+phrases <- phrases[with(phrases, order(SoundfileID, tmin)),]
+
+# Remove any pause from beginning of the tracks
+
+# Delete the code below to NOT filter
+# 
+# all_participants <- sort(unique(c(pauses$ParticipantID)))
+# # all_participants <- c(SELECTED_PARTICIPANT_ID)
+# languages <- c("L1", "L2")
+# tasks <- c("Task1", "Task2")
+# 
+# for (participant in all_participants) {
+#   for (language in languages) {
+#     for (task in tasks) {
+#       track_phrases <- phrases %>% filter(ParticipantID == participant, Language == language, Task == task)
+#       track_phrases <- track_phrases[order(track_phrases$tmin),]
+# 
+#       pauses <- pauses %>% filter(ParticipantID == participant, Language == language, Task == task, tmin <= track_phrases[1,]$tmin)
+#     }
+#   }
+# }
+
+```
+
+### Prepare X1 (How long ago was the last pause?)
+### Prepare X2 (Length of the previous pause)
+### Prepare X3 (Number of syllables since last pause)
+### Prepare X4 (Number of pauses in the last 5 seconds)
+```{r}
+all_participants <- sort(unique(c(pauses$ParticipantID)))
+# all_participants <- c(SELECTED_PARTICIPANT_ID)
+  
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+X1_last_pause = c()
+X2_last_pause_length = c()
+X3_syllables_since_last_pause = c()
+X4_num_pauses_5_sec = c()
+X5_num_pauses_10_sec = c()
+X6_num_pauses_15_sec = c()
+X10_num_phrases_5_sec = c()
+X11_num_phrases_10_sec = c()
+X12_num_phrases_15_sec = c()
+
+for (participant in all_participants) {
+  for (language in languages) {
+    for (task in tasks) {
+      track_pauses <- pauses %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_pauses <- track_pauses[order(track_pauses$tmin),]
+      
+      track_phrases <- phrases %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_phrases <- track_phrases[order(track_phrases$tmin),]
+
+      track_nuclei <- nuclei_df %>% filter(ParticipantID == participant, Task == task, Language == language)
+
+      if (nrow(track_pauses) == 0) next
+
+      for (row in 1:nrow(track_pauses)) {
+        if (row == 1) {
+          X1_last_pause = append(X1_last_pause, 0)
+          X2_last_pause_length = append(X2_last_pause_length, 0)
+          X3_syllables_since_last_pause = append(X3_syllables_since_last_pause, 0)
+          X4_num_pauses_5_sec = append(X4_num_pauses_5_sec, 0)
+          X5_num_pauses_10_sec = append(X5_num_pauses_10_sec, 0)
+          X6_num_pauses_15_sec = append(X6_num_pauses_15_sec, 0)
+          X10_num_phrases_5_sec = append(X10_num_phrases_5_sec, 0)
+          X11_num_phrases_10_sec = append(X11_num_phrases_10_sec, 0)
+          X12_num_phrases_15_sec = append(X12_num_phrases_15_sec, 0)
+          next
+        }
+
+        X1_last_pause = append(X1_last_pause, track_pauses[row,]$tmin - track_pauses[row - 1,]$tmin)
+        X2_last_pause_length = append(X2_last_pause_length, track_pauses[row - 1,]$duration)
+        
+        syllables_between <- track_nuclei %>% filter(tmin > track_pauses[row - 1,]$tmin, tmin < track_pauses[row,]$tmin)
+        X3_syllables_since_last_pause = append(X3_syllables_since_last_pause, nrow(syllables_between))
+        
+        pauses_in_5_sec <- track_pauses %>% filter(tmin > track_pauses[row,]$tmin - 5, tmin < track_pauses[row,]$tmin)
+        X4_num_pauses_5_sec = append(X4_num_pauses_5_sec, nrow(pauses_in_5_sec))
+        
+        pauses_in_10_sec <- track_pauses %>% filter(tmin > track_pauses[row,]$tmin - 10, tmin < track_pauses[row,]$tmin)
+        X5_num_pauses_10_sec = append(X5_num_pauses_10_sec, nrow(pauses_in_10_sec))
+        
+        pauses_in_15_sec <- track_pauses %>% filter(tmin > track_pauses[row,]$tmin - 15, tmin < track_pauses[row,]$tmin)
+        X6_num_pauses_15_sec = append(X6_num_pauses_15_sec, nrow(pauses_in_15_sec))
+        
+        phrasess_in_5_sec <- track_phrases %>% filter(tmin > track_phrases[row,]$tmin - 5, tmin < track_phrases[row,]$tmin)
+        X10_num_phrases_5_sec = append(X10_num_phrases_5_sec, nrow(phrasess_in_5_sec))
+        
+        phrasess_in_10_sec <- track_phrases %>% filter(tmin > track_phrases[row,]$tmin - 10, tmin < track_phrases[row,]$tmin)
+        X11_num_phrases_10_sec = append(X11_num_phrases_10_sec, nrow(phrasess_in_10_sec))
+        
+        phrasess_in_15_sec <- track_pauses %>% filter(tmin > track_pauses[row,]$tmin - 15, tmin < track_pauses[row,]$tmin)
+        X12_num_phrases_15_sec = append(X12_num_phrases_15_sec, nrow(phrasess_in_15_sec))
+      }
+    }
+  }
+}
+
+pauses$X1_last_pause <- X1_last_pause
+pauses$X2_last_pause_length <- X2_last_pause_length
+pauses$X3_syllables_since_last_pause <- X3_syllables_since_last_pause
+pauses$X4_num_pauses_5_sec <- X4_num_pauses_5_sec
+pauses$X5_num_pauses_10_sec <- X5_num_pauses_10_sec
+pauses$X6_num_pauses_15_sec <- X6_num_pauses_15_sec
+pauses$X10_num_phrases_5_sec <- X10_num_phrases_5_sec
+pauses$X11_num_phrases_10_sec <- X11_num_phrases_10_sec
+pauses$X12_num_phrases_15_sec <- X12_num_phrases_15_sec
+
+pauses <- pauses[with(pauses, order(SoundfileID, tmin)),]
+```
+
+Before we start training our model, it's important to talk about our response variable. Currently we have developed the "PauseDuration" column which is representing the pause duration for each pause. Since our goal is to predict the "Next Pause duration", we need to adjust the "PauseDuration" column to be representing the "next pause duration" for every record. In order to do that we need to shift the column up by 1 row.
+
+```{r}
+# Assuming 'pauses' is your DataFrame
+pauses <- pauses %>%
+  arrange(ParticipantID, Task, tmin) %>%
+  mutate(NextPauseDuration = lead(PauseDuration))
+
+# Remove the last row for each group since it won't have a 'next_pause_length'
+pauses <- pauses %>%
+  group_by(ParticipantID, Task) %>%
+  slice(-n())
+```
+
+## Using RandomForest Regression to create a model
+
+Include explanation about why it's okay to use all the data for all sound tracks put together and there is no need to train multiple models.
+
+Include text about investigations regarding the Homogeneity Across Sound Tracks, Inter-Track Variability
+
+Include information about investigating the effect of "Language", "Task" parameters and how they didn't seem to be relevant and not important
+
+- addition => change the model to be trained and checked against each soundtrack
+- 
+
+```{r}
+library(randomForest)
+
+set.seed(123) # for reproducibility
+train_indices <- sample(1:nrow(pauses), size = 0.8*nrow(pauses)) # 80% for training
+train_data <- pauses[train_indices, ]
+test_data <- pauses[-train_indices, ]
+
+rf_model <- randomForest(
+              NextPauseDuration ~
+                X1_last_pause +
+                X2_last_pause_length +
+                X3_syllables_since_last_pause +
+                X4_num_pauses_5_sec +
+                X5_num_pauses_10_sec +
+                X10_num_phrases_5_sec +
+                X11_num_phrases_10_sec
+            , data = train_data)
+
+predictions <- predict(rf_model, newdata = test_data)
+
+# Calculate MSE
+mse <- mean((predictions - test_data$NextPauseDuration)^2)
+print(paste("Test MSE:", mse))
+
+# Calculate RMSE
+rmse <- sqrt(mse)
+print(paste("Test RMSE:", rmse))
+
+# Calculate MAE
+mae <- mean(abs(predictions - test_data$NextPauseDuration))
+print(paste("Test MAE:", mae))
+
+# Calculate MAPE (Mean Absolute Percentage Error)
+# Note: Ensure that test_data$NextPauseDuration does not contain zeros to avoid division by zero
+mape <- mean(abs((predictions - test_data$NextPauseDuration) / test_data$NextPauseDuration)) * 100
+print(paste("Test MAPE:", mape, "%"))
+```
+```{r}
+# 1. Scatter Plot of Actual vs. Predicted Values
+
+results <- data.frame(Actual = test_data$NextPauseDuration, Predicted = predictions)
+
+ggplot(results, aes(x = Actual, y = Predicted)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+  labs(title = "Actual vs Predicted NextPauseDuration",
+       x = "Actual Duration",
+       y = "Predicted Duration") +
+  theme_minimal()
+
+# 2. Feature Importance Plot
+
+importance <- randomForest::importance(rf_model)
+featureImportance <- data.frame(Feature = rownames(importance), Importance = importance[, 'IncNodePurity'])
+
+ggplot(featureImportance, aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Feature Importance in Predicting NextPauseDuration",
+       x = "Feature",
+       y = "Increase in MSE if Feature is Excluded") +
+  theme_minimal()
+
+# 3. Residuals Plot
+results$Residuals <- results$Actual - results$Predicted
+
+ggplot(results, aes(x = Predicted, y = Residuals)) +
+  geom_point(alpha = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Residuals of Predictions",
+       x = "Predicted Duration",
+       y = "Residuals") +
+  theme_minimal()
+
+```
+
+Include text about how 10 sec is a better time window for num_pauses than 5 seconds. also 15 seconds was too high and we had to remove it
+
+Include text about how ARIMA is not suitable in our case:
+
+The applicability and performance of ARIMA depend significantly on the nature of your time series data, including its stationarity, seasonality, and the presence of trends. If your dataset is not a simple univariate time series, or if the pause durations are influenced by multiple factors (like the features you've created), you might need to explore multivariate time series models or stick with machine learning approaches that can handle multiple predictors.
+
+
+```{r}
+library(forecast)
+
+pauses_durations <- pauses %>% filter(ParticipantID == SELECTED_PARTICIPANT_ID, Language == "L1", Task == "Task1")
+
+pause_ts <- ts(pauses_durations$PauseDuration, frequency=1) # Adjust frequency as needed
+
+fit <- auto.arima(pause_ts)
+summary(fit)
+forecasts <- forecast(fit, h=5)
+print(forecasts)
+plot(forecasts)
+```
+
+
+
+## Some new visualizations
+
+```{r}
+
+all_participants <- sort(unique(c(pauses$ParticipantID)))
+# all_participants <- c(SELECTED_PARTICIPANT_ID)
+
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+for (participant in all_participants) {
+  for (language in languages) {
+    for (task in tasks) {
+      track_pauses <- pauses %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_pauses <- track_pauses[order(track_pauses$tmin),]
+      
+      track_phrases <- phrases %>% filter(ParticipantID == participant, Task == task, Language == language, PhraseType == "Filled")
+      track_phrases <- track_phrases[order(track_phrases$tmin),]
+ 
+      phrases_5secs <- track_phrases %>%
+        mutate(IntervalStart = floor(tmin / 5) * 5) %>%
+        group_by(IntervalStart) %>%
+        summarise(TotalDuration = sum(duration), Type = "Phrases")
+
+      pauses_5secs <- track_pauses %>%
+        mutate(IntervalStart = floor(tmin / 5) * 5) %>%
+        group_by(IntervalStart) %>%
+        summarise(TotalDuration = sum(duration), Type = "Pauses")
+      
+      track_combined <- rbind(phrases_5secs, pauses_5secs)
+      plt <- ggplot(track_combined, aes(x = as.factor(IntervalStart), y = TotalDuration, fill = Type)) +
+        geom_bar(stat = "identity", position = "stack") +
+        scale_fill_manual(values = c("Phrases" = "steelblue", "Pauses" = "salmon")) +
+        theme_minimal() +
+        labs(x = "Interval Start (s)", y = "Total Duration (s)", title = "Sum of Durations for Every 5-Second Interval") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+      print(plt)
+    }
+  }
+}
+```
+
+```{r}
+library(mgcv)
+
+all_participants <- sort(unique(c(pauses$ParticipantID)))
+# all_participants <- c("AMGOPP1")
+# all_participants <- c(SELECTED_PARTICIPANT_ID)
+
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+for (participant in all_participants) {
+  for (language in languages) {
+    for (task in tasks) {
+      track_pauses <- pauses %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_pauses <- track_pauses[order(track_pauses$tmin),]
+
+      track_phrases <- phrases %>% filter(ParticipantID == participant, Task == task, Language == language, PhraseType == "Filled")
+      track_phrases <- track_phrases[order(track_phrases$tmin),]
+
+      track_wordfreq <- wordfreq_df %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_wordfreq <- track_wordfreq[order(track_wordfreq$tmin),]
+
+      if (nrow(track_pauses) == 0 || nrow(track_phrases) == 0 || nrow(track_wordfreq) == 0) next
+      
+      pauses_5secs <- track_pauses %>%
+        mutate(IntervalStart = floor(tmin / 5) * 5) %>%
+        group_by(IntervalStart) %>%
+        summarise(
+          TotalDuration = sum(duration),
+          Type = "Pauses"
+        )
+
+      
+      X1_num_pauses_5_sec = c()
+      X2_num_pauses_10_sec = c()
+      X3_num_phrases_5_sec = c()
+      X4_num_phrases_10_sec = c()
+      X5_last_5_sec_pause_duration = c()
+      X6_sum_word_freq_5_sec = c()
+      
+      for (row in 1:nrow(pauses_5secs)) {
+        if (row == 1) {
+          X1_num_pauses_5_sec = append(X1_num_pauses_5_sec, 0)
+          X2_num_pauses_10_sec = append(X2_num_pauses_10_sec, 0)
+          X3_num_phrases_5_sec = append(X3_num_phrases_5_sec, 0)
+          X4_num_phrases_10_sec = append(X4_num_phrases_10_sec, 0)
+          X5_last_5_sec_pause_duration = append(X5_last_5_sec_pause_duration, 0)
+          X6_sum_word_freq_5_sec = append(X6_sum_word_freq_5_sec, 0)
+          next
+        }
+        
+        row_tmin <- pauses_5secs[row,]$IntervalStart
+
+        X1_last_pause = append(X1_last_pause, track_pauses[row,]$tmin - track_pauses[row - 1,]$tmin)
+        X2_last_pause_length = append(X2_last_pause_length, track_pauses[row - 1,]$duration)
+        
+        syllables_between <- track_nuclei %>% filter(tmin > track_pauses[row - 1,]$tmin, tmin < track_pauses[row,]$tmin)
+        X3_syllables_since_last_pause = append(X3_syllables_since_last_pause, nrow(syllables_between))
+        
+        pauses_in_5_sec <- track_pauses %>% filter(tmin > row_tmin - 5, tmin < row_tmin)
+        X1_num_pauses_5_sec = append(X1_num_pauses_5_sec, nrow(pauses_in_5_sec))
+
+        pauses_in_10_sec <- track_pauses %>% filter(tmin > row_tmin - 10, tmin < row_tmin)
+        X2_num_pauses_10_sec = append(X2_num_pauses_10_sec, nrow(pauses_in_10_sec))
+        
+        phrasess_in_5_sec <- track_phrases %>% filter(tmin > row_tmin - 5, tmin < row_tmin)
+        X3_num_phrases_5_sec = append(X3_num_phrases_5_sec, nrow(phrasess_in_5_sec))
+        
+        phrasess_in_10_sec <- track_phrases %>% filter(tmin > row_tmin - 10, tmin < row_tmin)
+        X4_num_phrases_10_sec = append(X4_num_phrases_10_sec, nrow(phrasess_in_10_sec))
+        
+        X5_last_5_sec_pause_duration = append(X5_last_5_sec_pause_duration, pauses_5secs[row - 1,]$TotalDuration)
+        
+        wordfreq_in_5_sec <- track_wordfreq %>% filter(tmin > row_tmin - 5, tmin < row_tmin)
+        X6_sum_word_freq_5_sec = append(X6_sum_word_freq_5_sec, mean(as.numeric(wordfreq_in_5_sec$text)))
+      }
+      
+      pauses_5secs$X1_num_pauses_5_sec <- X1_num_pauses_5_sec
+      pauses_5secs$X2_num_pauses_10_sec <- X2_num_pauses_10_sec
+      pauses_5secs$X3_num_phrases_5_sec <- X3_num_phrases_5_sec
+      pauses_5secs$X4_num_phrases_10_sec <- X4_num_phrases_10_sec
+      pauses_5secs$X5_last_5_sec_pause_duration <- X5_last_5_sec_pause_duration
+      pauses_5secs$X6_sum_word_freq_5_sec <- X6_sum_word_freq_5_sec
+      
+      pauses_5secs <- na.omit(pauses_5secs)
+
+      ###################################### GAM ######################################
+      # Fit a GAM model
+      gam_model <- gam(TotalDuration ~
+                         X1_num_pauses_5_sec +
+                         X2_num_pauses_10_sec +
+                         X3_num_phrases_5_sec +
+                         X4_num_phrases_10_sec +
+                         X5_last_5_sec_pause_duration +
+                         X6_sum_word_freq_5_sec
+                         # s(X1_num_pauses_5_sec, k = 4, bs='ps', sp = 0.6) +
+                         # s(X2_num_pauses_10_sec, k = 4, bs='ps', sp = 0.6) +
+                         # s(X3_num_phrases_5_sec, k = 4, bs='ps', sp = 0.6),
+                         # s(X4_num_phrases_10_sec, k = 4),
+                         # s(X5_last_5_sec_pause_duration, sp=0.6, k = 4),
+                      , data = pauses_5secs, family = gaussian(link = "log"))
+
+      # Step 2: Make predictions on the existing dataset
+      pauses_5secs$PredictedDuration <- predict(gam_model, newdata = pauses_5secs, type = "response")
+      
+      
+      ###################################### GAM + CV ######################################
+      gam_model_cv <- train(TotalDuration ~
+                         X1_num_pauses_5_sec +
+                         X2_num_pauses_10_sec +
+                         X3_num_phrases_5_sec +
+                         X4_num_phrases_10_sec +
+                         X5_last_5_sec_pause_duration +
+                         X6_sum_word_freq_5_sec, 
+                  data = pauses_5secs,
+                  method = "gam",
+                  trControl = trainControl(method = "cv", number = 10),
+                  tuneGrid = data.frame(method = "GCV.Cp", select = FALSE)
+      )
+      
+      # Use the trained model to make predictions
+      pauses_5secs$PredictedDurationGAM_CV <- predict(gam_model_cv, newdata = pauses_5secs)
+      
+      # Calculate evaluation metrics
+      print(postResample(pred = pauses_5secs$PredictedDurationGAM_CV, obs = pauses_5secs$TotalDuration))
+      
+      
+      ###################################### Random Forest ######################################
+      set.seed(123) # for reproducibility
+      train_indices <- sample(1:nrow(pauses_5secs), size = 0.8*nrow(pauses_5secs))
+      train_data <- pauses_5secs[train_indices, ]
+      test_data <- pauses_5secs[-train_indices, ]
+      rf_model <- randomForest(
+                    TotalDuration ~
+                      X1_num_pauses_5_sec +
+                      X2_num_pauses_10_sec +
+                      X3_num_phrases_5_sec +
+                      X4_num_phrases_10_sec +
+                      X5_last_5_sec_pause_duration +
+                      X6_sum_word_freq_5_sec
+                  , data = train_data)
+      
+      pauses_5secs$PredictedDurationRF <- predict(rf_model, newdata = pauses_5secs, type = "response")
+      
+      ###################################### Random Forest + CV ######################################
+      train_control <- trainControl(method = "cv", number = 10)
+      formula <- TotalDuration ~
+        X1_num_pauses_5_sec +
+        X2_num_pauses_10_sec +
+        X3_num_phrases_5_sec +
+        X4_num_phrases_10_sec +
+        X5_last_5_sec_pause_duration +
+        X6_sum_word_freq_5_sec
+
+      # Train the model with cross-validation
+      rf_model_cv <- train(
+        formula,
+        data = pauses_5secs,
+        method = "rf",
+        trControl = train_control
+      )
+
+      # Use the trained model to make predictions
+      pauses_5secs$PredictedDurationRF_CV <- predict(rf_model_cv, newdata = pauses_5secs)
+      
+      # Calculate evaluation metrics
+      print(postResample(pred = pauses_5secs$PredictedDurationRF_CV, obs = pauses_5secs$TotalDuration))
+      
+      # Calculate MSE
+      mse <- mean((pauses_5secs$PredictedDurationRF - pauses_5secs$TotalDuration)^2)
+      print(paste(participant, language, task, "Test MSE:", mse))
+      
+      # Calculate RMSE
+      rmse <- sqrt(mse)
+      print(paste(participant, language, task, "Test RMSE:", rmse))
+      
+      # Calculate MAE
+      mae <- mean(abs(pauses_5secs$PredictedDurationRF - pauses_5secs$TotalDuration))
+      print(paste(participant, language, task, "Test MAE:", mae))
+
+      # Step 3: Visualize Actual vs. Predicted Durations
+      plt <- ggplot(pauses_5secs, aes(x = as.factor(IntervalStart))) +
+        geom_bar(aes(y = TotalDuration, fill = "Pause Duration"), stat = "identity", position = "dodge", color = "steelblue") +
+        geom_line(aes(y = PredictedDuration, group = 1, color = "Pred - GAM"), size = 1) +
+        geom_line(aes(y = PredictedDurationGAM_CV, group = 1, color = "Pred - GAM + CV"), size = 1) +
+        geom_line(aes(y = PredictedDurationRF, group = 1, color = "Pred - RF"), size = 1) +
+        geom_line(aes(y = PredictedDurationRF_CV, group = 1, color = "Pred - RF + CV"), size = 1) +
+        scale_fill_manual(values = c("Pause Duration" = "steelblue")) +
+        scale_color_manual(values = c("Pred - GAM" = "black", "Pred - GAM + CV" = "purple", "Pred - RF" = "red", "Pred - RF + CV" = "blue")) +
+        theme_minimal() +
+        labs(x = "Interval Start (s)", y = "Duration (s)", title = paste("Actual vs. Predicted Durations for Each Interval - ", participant, task, language)) +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+      print(plt)
+# 
+#       # Prepare data for prediction
+#       prediction_data <- data.frame(IntervalStart = seq(min(pauses_5secs$IntervalStart), max(pauses_5secs$IntervalStart), by = 1))
+#       prediction_data$X5_last_5_sec_pause_duration <- mean(pauses_5secs$X5_last_5_sec_pause_duration)
+#       prediction_data$PredictedDuration <- predict(gam_model, newdata = prediction_data, type = "response")
+# 
+#       plt <- ggplot(pauses_5secs, aes(x = as.factor(IntervalStart), y = TotalDuration)) +
+#         geom_bar(stat = "identity", position = "stack", color = "steelblue") +
+#         geom_line(data = prediction_data, aes(x = as.factor(IntervalStart), y = PredictedDuration, group = 1), color = "black") +
+#         theme_minimal() +
+#         labs(x = "Interval Start (s)", y = "Total Duration (s)", title = "Sum of Durations for Every 5-Second Interval") +
+#         theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# 
+#       print(plt)
+      
+      
+    }
+  }
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+#######
+
+
+```{r}
+all_participants <- sort(unique(c(pauses$ParticipantID)))
+# all_participants <- c(SELECTED_PARTICIPANT_ID)
+  
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+X1_prev_pause_duration = c()
+X2_prev_speech_duration = c()
+X3_prev_speech_complexity = c()
+X4_prev_speech_syllables = c()
+X5_prev_pause_type = c()
+X6_prev_speech_rate = c()
+X7_prev_articulation_rate = c()
+
+for (participant in all_participants) {
+  for (language in languages) {
+    for (task in tasks) {
+      track_pauses <- pauses %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_pauses <- track_pauses[order(track_pauses$tmin),]
+      
+      track_phrases <- phrases %>% filter(ParticipantID == participant, Task == task, Language == language, tier == "Phrases")
+      track_phrases <- track_phrases[order(track_phrases$tmin),]
+
+      track_nuclei <- nuclei_df %>% filter(ParticipantID == participant, Task == task, Language == language)
+      
+      track_wordfreq <- wordfreq_df %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_wordfreq <- track_wordfreq[order(track_wordfreq$tmin),]
+
+      if (nrow(track_pauses) == 0 || nrow(track_phrases) == 0 || nrow(track_wordfreq) == 0) next
+
+      for (row in 1:nrow(track_pauses)) {
+        if (row == 1) {
+          X1_prev_pause_duration = append(X1_prev_pause_duration, 0)
+          X2_prev_speech_duration = append(X2_prev_speech_duration, 0)
+          X3_prev_speech_complexity = append(X3_prev_speech_complexity, 0)
+          X4_prev_speech_syllables = append(X4_prev_speech_syllables, 0)
+          X5_prev_pause_type = append(X5_prev_pause_type, "Silent")
+          X6_prev_speech_rate = append(X6_prev_speech_rate, 0)
+          X7_prev_articulation_rate = append(X7_prev_articulation_rate, 0)
+          next
+        }
+
+        X1_prev_pause_duration = append(X1_prev_pause_duration, track_pauses[row - 1,]$duration)
+        X2_prev_speech_duration = append(X2_prev_speech_duration, track_pauses[row,]$tmin - track_pauses[row - 1,]$tmin)
+        
+        wordfreq_between <- track_wordfreq %>% filter(tmin > track_pauses[row - 1,]$tmin, tmin < track_pauses[row,]$tmin)
+        X3_prev_speech_complexity = append(X3_prev_speech_complexity, mean(as.numeric(wordfreq_between$text)))
+
+        syllables_between <- track_nuclei %>% filter(tmin > track_pauses[row - 1,]$tmin, tmin < track_pauses[row,]$tmin)
+        X4_prev_speech_syllables = append(X4_prev_speech_syllables, nrow(syllables_between))
+
+        X5_prev_pause_type = append(X5_prev_pause_type, track_pauses[row - 1,]$PauseType)
+        
+        syllables_so_far = track_nuclei %>% filter(tmin > 0, tmin < track_pauses[row,]$tmin)
+        X6_prev_speech_rate = append(X6_prev_speech_rate, nrow(syllables_so_far) / track_pauses[row,]$tmin)
+        
+        speech_time_so_far = track_phrases %>% filter(tmin > 0, tmin < track_pauses[row,]$tmin) %>% filter(tier == "Phrases")
+        X7_prev_articulation_rate = append(X7_prev_articulation_rate, nrow(syllables_so_far) / sum(speech_time_so_far$duration))
+      }
+    }
+  }
+}
+
+pauses$X1_prev_pause_duration <- as.numeric(X1_prev_pause_duration)
+pauses$X2_prev_speech_duration <- as.numeric(X2_prev_speech_duration)
+pauses$X3_prev_speech_complexity <- as.numeric(X3_prev_speech_complexity %>% replace(is.na(.), 0))
+pauses$X4_prev_speech_syllables <- as.numeric(X4_prev_speech_syllables)
+pauses$X5_prev_pause_type <- as.factor(X5_prev_pause_type)
+pauses$X6_prev_speech_rate <- as.numeric(X6_prev_speech_rate)
+pauses$X7_prev_articulation_rate <- as.numeric(X7_prev_articulation_rate)
+
+pauses <- pauses[with(pauses, order(SoundfileID, tmin)),]
+pauses <- na.omit(pauses)
+```
+
+
+```{r}
+# Load necessary package
+library(mgcv)
+library(Metrics)
+
+# all_participants <- sort(unique(c(pauses$ParticipantID)))
+all_participants <- c(SELECTED_PARTICIPANT_ID)
+  
+languages <- c("L1", "L2")
+tasks <- c("Task1")
+
+for (participant in all_participants) {
+  for (language in languages) {
+    for (task in tasks) {
+      track_pauses <- pauses %>% filter(ParticipantID == participant, Task == task, Language == language)
+      track_pauses <- track_pauses[order(track_pauses$tmin),]
+      
+      set.seed(123) # For reproducibility
+      trainIndex <- createDataPartition(track_pauses$PauseDuration, p = .8, 
+                                        list = FALSE, 
+                                        times = 1)
+      trainData <- track_pauses[trainIndex, ]
+      testData <- track_pauses[-trainIndex, ]
+
+      # Sample GAM model fitting, ignoring random effects
+      gam_model <- gam(PauseDuration ~ s(X1_prev_pause_duration) + 
+                                         s(X2_prev_speech_duration) + 
+                                         s(X3_prev_speech_complexity) +
+                                         s(X4_prev_speech_syllables, k = 4) +
+                                         factor(X5_prev_pause_type) +
+                                         s(X6_prev_speech_rate) +
+                                         s(X7_prev_articulation_rate) +
+                                         s(tmin) +
+                                         X2_prev_speech_duration:X4_prev_speech_syllables +
+                                         PauseType
+                       , data = trainData)
+
+      # Summary of the model
+      print(summary(gam_model))
+
+      # Plotting the smooth terms to understand their effects
+      par(mfrow = c(3, 2))
+      plot(gam_model, residuals = TRUE)
+
+      # Predicting on the test set
+      predictions <- predict(gam_model, newdata = testData)
+      testData$Predictions <- predictions
+      
+      # Actual vs Predicted Plot
+      plt <- ggplot(testData, aes(x = tmin, y = Predictions)) +
+        geom_point(alpha = 0.5) +
+        geom_line(aes(x = tmin, y = PauseDuration), color = "red") +  # Adds a 45 degree line for reference
+        labs(x = "Actual Pause Duration", y = "Predicted Pause Duration", title = "Actual vs Predicted Pause Durations") +
+        theme_minimal()
+      print(plt)
+
+      # Calculating performance metrics
+      rmse_value <- rmse(testData$PauseDuration, predictions)
+      r_squared <- R2(predictions, testData$PauseDuration)
+      
+      # Printing performance metrics
+      cat("RMSE for Participant", participant, "in Language", language, "for Task", task, ":", rmse_value, "\n")
+      cat("R^2 for Participant", participant, "in Language", language, "for Task", task, ":", r_squared, "\n")
+      print("======================================================================")
+    }
+  }
+}
+```
+
+```{r}
+# Load necessary packages
+library(randomForest)
+library(dplyr)
+library(Metrics) # For RMSE
+library(caret) # For R^2 and data splitting
+
+# Assuming 'pauses' is your dataset
+all_participants <- c(SELECTED_PARTICIPANT_ID)
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+for (participant in all_participants) {
+  for (language in languages) {
+    for (task in tasks) {
+      track_pauses <- pauses %>%
+                      filter(ParticipantID == participant, Task == task, Language == language) %>%
+                      arrange(tmin)
+
+      # Splitting data into training and test sets
+      set.seed(123) # For reproducibility
+      trainIndex <- createDataPartition(track_pauses$PauseDuration, p = .8, 
+                                        list = FALSE, 
+                                        times = 1)
+      trainData <- track_pauses[trainIndex, ]
+      testData <- track_pauses[-trainIndex, ]
+
+      # Fitting Random Forest model on the training set
+      rf_model <- randomForest(PauseDuration ~ X1_prev_pause_duration + 
+                                                X2_prev_speech_duration + 
+                                                X3_prev_speech_complexity +
+                                                X4_prev_speech_syllables +
+                                                X5_prev_pause_type +
+                                                X6_prev_speech_rate +
+                                                X7_prev_articulation_rate +
+                                                tmin +
+                                                PauseType,
+                                data = trainData, 
+                                ntree = 500) # You can adjust the number of trees
+
+      # Summary of the model
+      print(rf_model)
+      
+      # Predicting on the test set
+      predictions <- predict(rf_model, newdata = testData)
+      testData$Predictions <- predictions
+      
+      
+      # Plot 1: Feature Importance
+      importance_df <- as.data.frame(importance(rf_model))
+      print(importance_df)
+      importance_df$Feature <- rownames(importance_df)
+      plt <- ggplot(importance_df, aes(x = reorder(Feature, IncNodePurity), y = IncNodePurity)) +
+        geom_bar(stat = "identity") +
+        coord_flip() +
+        xlab("Feature") + ylab("Importance") +
+        ggtitle(paste("Feature Importance for Participant", participant, "Language", language, "Task", task))
+      print(plt)
+      
+      # Plot 2: Actual vs Predicted Pause Durations
+      plt <- ggplot(testData, aes(x = tmin, y = Predictions)) +
+        geom_point(alpha = 0.5) +
+        geom_line(aes(x = tmin, y = PauseDuration), color = "red") +  # Adds a 45 degree line for reference
+        labs(x = "Actual Pause Duration", y = "Predicted Pause Duration", 
+             title = paste("Actual vs Predicted Pause Durations for Participant", participant, "Language", language, "Task", task))
+      print(plt)
+      # Calculate and print performance metrics
+      # rmse_value <- rmse(testData$PauseDuration, predictions)
+      # r_squared <- R2(predictions, testData$PauseDuration)
+      # cat("RMSE for Participant", participant, "Language", language, "Task", task, ":", rmse_value, "\n")
+      # cat("R^2 for Participant", participant, "Language", language, "Task", task, ":", r_squared, "\n")
+    }
+  }
+}
+```
+
+
+```{r}
+# Load necessary package
+library(mgcv)
+library(Metrics)
+
+# all_participants <- sort(unique(c(pauses$ParticipantID)))
+all_participants <- c(SELECTED_PARTICIPANT_ID)
+  
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+for (participant in all_participants) {
+  participant_pauses <- pauses %>% filter(ParticipantID == participant)
+  participant_pauses <- participant_pauses[order(participant_pauses$SoundfileID, participant_pauses$tmin),]
+  
+  set.seed(123) # For reproducibility
+  trainIndex <- createDataPartition(participant_pauses$PauseDuration, p = .8,
+                                    list = FALSE,
+                                    times = 1)
+  trainData <- participant_pauses[trainIndex, ]
+  testData <- participant_pauses[-trainIndex, ]
+
+  # Sample GAM model fitting, ignoring random effects
+  gam_model <- gam(PauseDuration ~ s(X1_prev_pause_duration) +
+                                     s(X2_prev_speech_duration) +
+                                     s(X3_prev_speech_complexity) +
+                                     s(X4_prev_speech_syllables, k = 4) +
+                                     factor(X5_prev_pause_type) +
+                                     s(X6_prev_speech_rate) +
+                                     s(X7_prev_articulation_rate) +
+                                     s(tmin) +
+                                     Task:Language +
+                                     PauseType
+                   , data = trainData)
+
+  # Summary of the model
+  print(summary(gam_model))
+  
+  # Plotting the smooth terms to understand their effects
+  par(mfrow = c(2, 2))
+  plot(gam_model, residuals = TRUE)
+  
+  # Predicting on the test set
+  predictions <- predict(gam_model, newdata = testData)
+  testData$Predictions <- predictions
+  
+  # Calculating performance metrics
+  rmse_value <- rmse(testData$PauseDuration, predictions)
+  r_squared <- R2(predictions, testData$PauseDuration)
+
+  # Printing performance metrics
+  cat("RMSE for Participant", participant, ":", rmse_value, "\n")
+  cat("R^2 for Participant", participant, ":", r_squared, "\n")
+  print("======================================================================")
+
+  for (language in languages) {
+    for (task in tasks) {
+      # Actual vs Predicted Plot
+      plt_data <- testData %>% filter(Language == language, Task == task)
+      plt <- ggplot(plt_data, aes(x = tmin, y = Predictions)) +
+        geom_point(alpha = 0.5) +
+        geom_line(aes(x = tmin, y = PauseDuration), color = "red") +  # Adds a 45 degree line for reference
+        labs(x = "Actual Pause Duration", y = "Predicted Pause Duration", title = "Actual vs Predicted Pause Durations") +
+        theme_minimal()
+      print(plt)
+    }
+  }
+}
+```
+
+
+
+
+
+```{r}
+# Sample GAMM model fitting with crossed random effects
+gamm_model <- bam(PauseDuration ~ s(X1_prev_pause_duration) + 
+                                    s(X2_prev_speech_duration) + 
+                                    s(X3_prev_speech_complexity) + 
+                                    s(X4_prev_speech_syllables) +
+                                    factor(X5_prev_pause_type) +
+                                    s(tmin) +
+                                    PauseType +
+                                    Task
+                  ,random = ~(1|ParticipantID) + (1|Language),data = pauses,
+                  discrete = TRUE) # 'discrete = TRUE' can speed up large models
+
+# Summary of the model
+summary(gamm_model)
+
+
+# Assuming 'data' is your dataset and 'gamm_model' is your fitted model
+predicted_values <- predict(gamm_model, newdata = pauses)
+pauses$PredictedPauseDuration <- predicted_values
+actual_values <- pauses$PauseDuration
+
+# Plotting actual vs. predicted pause durations for a specific SoundfileID
+specific_soundtrack <- "AMGOPP1_L2_Task2.wav"
+subset_data <- pauses[pauses$SoundfileID == specific_soundtrack, ]
+
+# Create a long format data for plotting with ggplot
+subset_data_long <- reshape2::melt(subset_data, id.vars = "tmin", measure.vars = c("PauseDuration", "PredictedPauseDuration"))
+
+# Plot using ggplot
+ggplot(subset_data_long, aes(x = tmin, y = value, color = variable)) + 
+  geom_line() + 
+  labs(x = "Time", y = "Pause Duration", color = "Legend") +
+  ggtitle(paste("Actual vs. Predicted Pause Durations for", specific_soundtrack)) +
+  scale_color_manual(values = c("PauseDuration" = "blue", "PredictedPauseDuration" = "red"), labels = c("Actual", "Predicted")) +
+  theme_minimal()
+
+>>>>>>> Stashed changes
 ```
