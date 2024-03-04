@@ -871,6 +871,26 @@ phrases <- rbind(dfauto_phrases, phrases_phrases)
 
 pauses <- pauses[with(pauses, order(SoundfileID, tmin)),]
 phrases <- phrases[with(phrases, order(SoundfileID, tmin)),]
+
+# Remove any pause from beginning of the tracks
+
+# Delete the code below to NOT filter
+# 
+# all_participants <- sort(unique(c(pauses$ParticipantID)))
+# # all_participants <- c(SELECTED_PARTICIPANT_ID)
+# languages <- c("L1", "L2")
+# tasks <- c("Task1", "Task2")
+# 
+# for (participant in all_participants) {
+#   for (language in languages) {
+#     for (task in tasks) {
+#       track_phrases <- phrases %>% filter(ParticipantID == participant, Language == language, Task == task)
+#       track_phrases <- track_phrases[order(track_phrases$tmin),]
+# 
+#       pauses <- pauses %>% filter(ParticipantID == participant, Language == language, Task == task, tmin <= track_phrases[1,]$tmin)
+#     }
+#   }
+# }
 ```
 
 ### Prepare X1 (How long ago was the last pause?)
@@ -1580,6 +1600,76 @@ for (participant in all_participants) {
 }
 ```
 
+
+```{r}
+# Load necessary package
+library(mgcv)
+library(Metrics)
+
+# all_participants <- sort(unique(c(pauses$ParticipantID)))
+all_participants <- c(SELECTED_PARTICIPANT_ID)
+  
+languages <- c("L1", "L2")
+tasks <- c("Task1", "Task2")
+
+for (participant in all_participants) {
+  participant_pauses <- pauses %>% filter(ParticipantID == participant)
+  participant_pauses <- participant_pauses[order(participant_pauses$SoundfileID, participant_pauses$tmin),]
+  
+  set.seed(123) # For reproducibility
+  trainIndex <- createDataPartition(participant_pauses$PauseDuration, p = .8,
+                                    list = FALSE,
+                                    times = 1)
+  trainData <- participant_pauses[trainIndex, ]
+  testData <- participant_pauses[-trainIndex, ]
+
+  # Sample GAM model fitting, ignoring random effects
+  gam_model <- gam(PauseDuration ~ s(X1_prev_pause_duration) +
+                                     s(X2_prev_speech_duration) +
+                                     s(X3_prev_speech_complexity) +
+                                     s(X4_prev_speech_syllables, k = 4) +
+                                     factor(X5_prev_pause_type) +
+                                     s(X6_prev_speech_rate) +
+                                     s(X7_prev_articulation_rate) +
+                                     s(tmin) +
+                                     Task:Language +
+                                     PauseType
+                   , data = trainData)
+
+  # Summary of the model
+  print(summary(gam_model))
+  
+  # Plotting the smooth terms to understand their effects
+  par(mfrow = c(2, 2))
+  plot(gam_model, residuals = TRUE)
+  
+  # Predicting on the test set
+  predictions <- predict(gam_model, newdata = testData)
+  testData$Predictions <- predictions
+  
+  # Calculating performance metrics
+  rmse_value <- rmse(testData$PauseDuration, predictions)
+  r_squared <- R2(predictions, testData$PauseDuration)
+
+  # Printing performance metrics
+  cat("RMSE for Participant", participant, ":", rmse_value, "\n")
+  cat("R^2 for Participant", participant, ":", r_squared, "\n")
+  print("======================================================================")
+
+  for (language in languages) {
+    for (task in tasks) {
+      # Actual vs Predicted Plot
+      plt_data <- testData %>% filter(Language == language, Task == task)
+      plt <- ggplot(plt_data, aes(x = tmin, y = Predictions)) +
+        geom_point(alpha = 0.5) +
+        geom_line(aes(x = tmin, y = PauseDuration), color = "red") +  # Adds a 45 degree line for reference
+        labs(x = "Actual Pause Duration", y = "Predicted Pause Duration", title = "Actual vs Predicted Pause Durations") +
+        theme_minimal()
+      print(plt)
+    }
+  }
+}
+```
 
 
 
